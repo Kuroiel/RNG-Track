@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rng_auditor"
+version = "0.1.0"
+
+[tool.setuptools.packages.find]
+where = ["."]  # Look for packages in the current directory
+include = ["backend*"]  # Find the 'backend' package and any sub-packages
+exclude = ["tests*"]  # Explicitly exclude the 'tests' folder

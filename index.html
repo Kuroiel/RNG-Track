@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RNG Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>RNG Tracker</h1>
+        <p>Salt from statistics.</p>
+    </header>
+
+    <main>
+        <div class="card" id="game-selector-card">
+            <h2>Step 1: Select Your Game</h2>
+            <div id="game-list">
+            </div>
+            <div id="add-game-section">
+                <h3>Add a New Game</h3>
+                <input type="text" id="game-search-input" placeholder="Search for a game (e.g., Elden Ring)">
+                <div id="search-results">
+                </div>
+            </div>
+        </div>
+
+        <div class="card hidden" id="event-selector-card">
+            <h2>Step 2: Select Your Tracker</h2>
+            <select id="event-select-dropdown">
+                <option value="">-- Select an Event --</option>
+            </select>
+            <div id="add-event-section">
+                <input type="text" id="new-event-name-input" placeholder="New tracker name (e.g., Mount Drop)">
+                <button id="add-event-button">Create Tracker</button>
+            </div>
+        </div>
+
+        <div class="card hidden" id="logger-card">
+            <h2>Step 3: Log Your Attempts</h2>
+            <h3 id="current-tracker-name"></h3>
+            <div class="logger-buttons">
+                <button id="log-failure-button">Log Failure</button>
+                <button id="log-success-button">Log Success</button>
+            </div>
+            <div id="stats-display">
+                <div class="stat-item">
+                    <span class="stat-title">Successes</span>
+                    <span id="success-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-title">Failures</span>
+                    <span id="failure-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-title">Total Attempts</span>
+                    <span id="total-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-title">Observed Rate</span>
+                    <span id="observed-rate" class="stat-value">N/A</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
