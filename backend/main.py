@@ -10,6 +10,8 @@ from typing import List, Dict
 from . import models, schemas
 from .database import SessionLocal, engine, init_db
 
+from fastapi.middleware.cors import CORSMiddleware
+
 load_dotenv()
 RAWG_API_KEY = os.getenv("RAWG_API_KEY")
 
@@ -19,6 +21,20 @@ app = FastAPI(
     title="RNG event track",
     description="An API for tracking and auditing random events in your favorite games.",
     version="1.0.0",
+)
+
+origins = [
+    "https://kuroiel.github.io",  # Your live frontend URL
+    "http://localhost:8001",      # For development with your http.server
+    "http://127.0.0.1:8001",     # Another common local address
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # Allow access from these specific origins
+    allow_credentials=True,
+    allow_methods=["*"],         # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],         # Allow all headers
 )
 
 @app.get("/")
