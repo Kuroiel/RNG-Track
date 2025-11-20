@@ -1,5 +1,5 @@
 
-const API_BASE_URL = "https://friendly-chainsaw-9575946v5xxhpxpv-8000.app.github.dev/";
+const API_BASE_URL = "https://rng-track.onrender.com";
 
 
 const AppState = {
