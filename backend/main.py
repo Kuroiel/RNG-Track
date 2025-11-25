@@ -6,7 +6,6 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict
 
-# Import all the components we've built
 from . import models, schemas
 from .database import SessionLocal, engine, init_db
 
@@ -15,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 RAWG_API_KEY = os.getenv("RAWG_API_KEY")
 
-# --- Application Initialization ---
 init_db()
 app = FastAPI(
     title="RNG event track",
@@ -24,25 +22,25 @@ app = FastAPI(
 )
 
 origins = [
-    "https://kuroiel.github.io",  # Your live frontend URL
-    "http://localhost:8001",      # For development with your http.server
-    "http://127.0.0.1:8001",     # Another common local address
+    "https://kuroiel.github.io",  
+    "http://localhost:8001",     
+    "http://127.0.0.1:8001",     
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # Allow access from these specific origins
+    allow_origins=origins,      
     allow_credentials=True,
-    allow_methods=["*"],         # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],         # Allow all headers
+    allow_methods=["*"],        
+    allow_headers=["*"],    
 )
 
 @app.get("/")
 def read_root():
     """A simple health check endpoint."""
-    return {"status": "ok", "message": "RNG-esus API is running!"}
+    return {"status": "ok", "message": "RNG API is running!"}
 
-# --- Dependency for Database Session ---
+
 def get_db():
     db = SessionLocal()
     try:
@@ -87,7 +85,7 @@ async def search_games(query: str):
     
     return results
 
-# --- API Endpoints for Games ---
+
 
 @app.post("/api/games/", response_model=schemas.Game)
 def create_game(game: schemas.GameCreate, db: Session = Depends(get_db)):
@@ -118,7 +116,7 @@ def read_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     games = db.query(models.Game).offset(skip).limit(limit).all()
     return games
 
-# --- API Endpoints for Events ---
+
 
 @app.post("/api/games/{game_id}/events/", response_model=schemas.Event)
 def create_event_for_game(game_id: int, event: schemas.EventCreate, db: Session = Depends(get_db)):
