@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000";
+const API_URL = "https://rng-track.onrender.com";
 
 // --- State Management ---
 let CURRENT_USER_ID = localStorage.getItem("rng_tracker_uuid");
@@ -14,7 +14,7 @@ let CACHED_EVENTS = []; // Store data to toggle views instantly
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
-  // Load local games initially (optional, or just wait for search)
+  // Load local games initially
   fetchLocalGames();
 });
 
@@ -26,21 +26,23 @@ async function searchGames() {
 
   try {
     const res = await fetch(`${API_URL}/games/search?query=${query}`);
+    if (!res.ok) throw new Error("API Request Failed");
     const games = await res.json();
     renderGameList(games, true);
   } catch (err) {
     console.error(err);
-    alert("Failed to search games.");
+    alert("Failed to search games. Check your connection or API URL.");
   }
 }
 
 async function fetchLocalGames() {
   try {
     const res = await fetch(`${API_URL}/games`);
+    if (!res.ok) throw new Error("API Request Failed");
     const games = await res.json();
     renderGameList(games, false);
   } catch (err) {
-    console.error(err);
+    console.error("Could not fetch local games:", err);
   }
 }
 
@@ -52,6 +54,9 @@ async function selectGame(rawgId, name, imageUrl) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, rawg_id: rawgId, image_url: imageUrl }),
     });
+
+    if (!res.ok) throw new Error("Failed to select game");
+
     const gameData = await res.json();
 
     // 2. Set Active State
@@ -77,6 +82,7 @@ async function loadEvents() {
     const res = await fetch(
       `${API_URL}/events/${ACTIVE_GAME_ID}?user_id=${CURRENT_USER_ID}`
     );
+    if (!res.ok) throw new Error("Failed to load events");
     CACHED_EVENTS = await res.json();
     renderEvents();
   } catch (err) {
@@ -242,10 +248,6 @@ function renderEvents() {
       const percentage =
         totalLogs > 0 ? ((count / totalLogs) * 100).toFixed(1) : "0.0";
       const expected = (outcome.expected_probability * 100).toFixed(1);
-
-      // Determine color based on luck (simple heuristic)
-      // If Observed < Expected, maybe red? If > Expected, green?
-      // Keeping it neutral for now to avoid confusion.
 
       outcomesHtml += `
                 <div class="outcome-box">
