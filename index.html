@@ -5,272 +5,162 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
     <style>
-      :root {
-        --bg-color: #121212;
-        --card-bg: #1e1e1e;
-        --primary: #bb86fc;
-        --text-main: #e0e0e0;
-        --text-muted: #a0a0a0;
-        --border: #333;
-      }
-
       body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background-color: var(--bg-color);
-        color: var(--text-main);
-        margin: 0;
+        font-family: sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
         padding: 20px;
       }
-
-      .container {
-        max-width: 900px;
-        margin: 0 auto;
-      }
-
-      h1,
-      h2,
-      h3 {
-        color: var(--primary);
-      }
-
-      /* Search & Game List */
-      #search-section {
+      .card {
+        border: 1px solid #ccc;
+        padding: 15px;
         margin-bottom: 20px;
-        display: flex;
-        gap: 10px;
-      }
-
-      input,
-      button,
-      select {
-        padding: 10px;
         border-radius: 5px;
-        border: 1px solid var(--border);
-        background: var(--card-bg);
-        color: var(--text-main);
       }
-
-      button {
-        cursor: pointer;
-        background-color: #333;
-        transition: background 0.2s;
+      .game-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
       }
-      button:hover {
-        background-color: #444;
-      }
-      button.primary {
-        background-color: var(--primary);
-        color: #000;
-        font-weight: bold;
-      }
-
-      .game-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 15px;
-        margin-top: 20px;
-      }
-
-      .game-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 10px;
-        text-align: center;
-        cursor: pointer;
-      }
-      .game-card:hover {
-        border-color: var(--primary);
-      }
-      .game-card img {
-        width: 100%;
-        height: 100px;
+      .game-img {
+        width: 50px;
+        height: 50px;
         object-fit: cover;
-        border-radius: 4px;
+        border-radius: 5px;
+        margin-right: 10px;
       }
-
-      /* Active Game Section */
-      #active-game-section {
+      .btn {
+        cursor: pointer;
+        padding: 5px 10px;
+        background: #eee;
+        border: 1px solid #999;
+        border-radius: 3px;
+      }
+      .btn:hover {
+        background: #ddd;
+      }
+      .btn-primary {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+      }
+      .btn-primary:hover {
+        background: #0056b3;
+      }
+      .hidden {
         display: none;
       }
-
-      .controls-header {
+      .stats-row {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        background: var(--card-bg);
-        padding: 15px;
-        border-radius: 8px;
+        margin-top: 10px;
+      }
+      .outcome-group {
+        margin-top: 10px;
+        padding: 10px;
+        background: #f9f9f9;
+        border: 1px solid #eee;
       }
 
-      .toggle-container {
-        display: flex;
-        align-items: center;
-        gap: 10px;
+      /* New Styles for Bulk Add & Analysis */
+      .bulk-input {
+        width: 50px;
+        margin-right: 5px;
+        padding: 5px;
       }
-
-      /* Event Cards */
-      .event-card {
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 20px;
-      }
-
-      .event-header {
-        display: flex;
-        justify-content: space-between;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 10px;
-        margin-bottom: 15px;
-      }
-
-      .outcomes-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 15px;
-      }
-
-      .outcome-box {
-        background: #2a2a2a;
+      .analysis-box {
+        background-color: #eef;
         padding: 10px;
         border-radius: 5px;
-        text-align: center;
+        margin-top: 10px;
+        border: 1px solid #ccd;
       }
-
-      .stats-row {
-        font-size: 0.9em;
-        color: var(--text-muted);
-        margin: 5px 0;
-        display: flex;
-        justify-content: space-between;
+      .good-luck {
+        color: green;
+        font-weight: bold;
       }
-
-      .log-btn {
-        width: 100%;
-        margin-top: 5px;
-        padding: 8px;
-        background: #3a3a3a;
-        border: 1px solid var(--border);
+      .bad-luck {
+        color: red;
+        font-weight: bold;
       }
-      .log-btn:hover {
-        background: var(--primary);
-        color: black;
-      }
-
-      /* Modal for New Event */
-      #create-event-form {
-        background: #252525;
-        padding: 20px;
-        border-radius: 8px;
+      .header-controls {
         margin-bottom: 20px;
-        border: 1px solid var(--border);
-        display: none; /* Hidden by default */
-      }
-
-      .outcome-input-row {
         display: flex;
         gap: 10px;
-        margin-bottom: 10px;
-      }
-      .outcome-input-row input {
-        flex: 1;
-      }
-      .remove-row-btn {
-        background: #cf6679;
-        color: white;
-        border: none;
-      }
-
-      .hidden {
-        display: none !important;
+        align-items: center;
+        flex-wrap: wrap;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h1>RNG Tracker</h1>
-        <p class="subtitle">
-          Track drop rates, compare with global stats, and detect anomalies.
-        </p>
-      </header>
+    <h1>RNG Tracker</h1>
 
-      <!-- STEP 1: Search Game -->
-      <div id="search-section">
-        <input
-          type="text"
-          id="game-search"
-          placeholder="Search for a game..."
-          style="flex: 1"
-        />
-        <button onclick="searchGames()" class="primary">Search</button>
-      </div>
-
-      <div id="games-container" class="game-list"></div>
-
-      <!-- STEP 2: Active Game View -->
-      <div id="active-game-section">
-        <button onclick="backToSearch()" style="margin-bottom: 10px">
-          &larr; Back to Search
-        </button>
-
-        <div class="controls-header">
-          <h2 id="active-game-title" style="margin: 0">Game Title</h2>
-
-          <div class="toggle-container">
-            <span id="view-label">Global Stats</span>
-            <button id="view-toggle-btn" onclick="toggleViewMode()">
-              Switch to My Stats
-            </button>
-          </div>
-        </div>
-
-        <button
-          onclick="toggleCreateForm()"
-          class="primary"
-          style="width: 100%; margin-bottom: 20px"
-        >
-          + Create New Tracking Event
-        </button>
-
-        <!-- Create Event Form -->
-        <div id="create-event-form">
-          <h3>Create New Event Template</h3>
-          <div style="margin-bottom: 10px">
-            <label>Event Name (e.g., "Raid Boss Drop")</label>
-            <input type="text" id="new-event-name" style="width: 100%" />
-          </div>
-          <div style="margin-bottom: 10px">
-            <label>Description</label>
-            <input type="text" id="new-event-desc" style="width: 100%" />
-          </div>
-
-          <h4>Outcomes</h4>
-          <div id="outcome-inputs-container">
-            <!-- Dynamic rows go here -->
-          </div>
-          <button
-            onclick="addOutcomeRow()"
-            style="margin-bottom: 15px; width: 100%"
-          >
-            + Add Another Outcome
-          </button>
-
-          <div style="text-align: right">
-            <button onclick="toggleCreateForm()">Cancel</button>
-            <button onclick="submitNewEvent()" class="primary">
-              Save Event
-            </button>
-          </div>
-        </div>
-
-        <!-- Events List -->
-        <div id="events-container"></div>
-      </div>
+    <div class="header-controls">
+      <label>
+        <input type="checkbox" id="viewToggle" /> Show My Stats Only
+      </label>
+      <span style="flex-grow: 1"></span>
+      <!-- Req #2 & #3 -->
+      <button class="btn" onclick="exportData()">Export My Data</button>
+      <button
+        class="btn"
+        onclick="document.getElementById('importFile').click()"
+      >
+        Import Data
+      </button>
+      <input
+        type="file"
+        id="importFile"
+        class="hidden"
+        accept=".json"
+        onchange="importData(this)"
+      />
     </div>
+
+    <!-- Create Section -->
+    <div class="card">
+      <h3>Add New Event</h3>
+      <select id="gameSelect"></select>
+      <input type="text" id="newGameName" placeholder="Or New Game Name" />
+      <br /><br />
+      <input
+        type="text"
+        id="eventName"
+        placeholder="Event Name (e.g. Drop X)"
+      />
+      <!-- Req #1: Placeholder changed to indicate % -->
+      <input
+        type="number"
+        id="eventProb"
+        placeholder="Probability % (e.g. 25)"
+        step="0.1"
+      />
+      <br /><br />
+      <div id="outcomesList">
+        <div>
+          <input type="text" placeholder="Outcome Name" class="outcome-name" />
+          <label
+            ><input type="checkbox" class="outcome-success" /> Is
+            Success?</label
+          >
+        </div>
+        <div>
+          <input type="text" placeholder="Outcome Name" class="outcome-name" />
+          <label
+            ><input type="checkbox" class="outcome-success" /> Is
+            Success?</label
+          >
+        </div>
+      </div>
+      <button class="btn" onclick="addOutcomeField()">+ Outcome</button>
+      <br /><br />
+      <button class="btn btn-primary" onclick="createEvent()">
+        Create Event
+      </button>
+    </div>
+
+    <!-- Tracker Section -->
+    <div id="trackerContainer"></div>
 
     <script src="script.js"></script>
   </body>

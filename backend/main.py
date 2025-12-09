@@ -1,197 +1,157 @@
-import os
 from fastapi import FastAPI, Depends, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
-import httpx
+import models, schemas
+from database import SessionLocal, engine
+from fastapi.middleware.cors import CORSMiddleware
 
-from . import models, schemas, database
-
-# Create tables if they don't exist
-models.Base.metadata.create_all(bind=database.engine)
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Allow CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Dependency to get DB session
 def get_db():
-    db = database.SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# RAWG API Configuration
-RAWG_API_KEY = os.getenv("RAWG_API_KEY") 
-RAWG_BASE_URL = "https://api.rawg.io/api/games"
-
-# --- Game Routes ---
-
-@app.get("/games/search", response_model=List[schemas.GameBase])
-async def search_games(query: str):
-    if not RAWG_API_KEY:
-        raise HTTPException(status_code=500, detail="Server Error: RAWG API Key not configured.")
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            RAWG_BASE_URL,
-            params={"key": RAWG_API_KEY, "search": query, "page_size": 5}
-        )
-        if response.status_code != 200:
-            raise HTTPException(status_code=500, detail="Failed to fetch data from RAWG")
-        
-        data = response.json()
-        results = []
-        for item in data.get("results", []):
-            results.append(schemas.GameBase(
-                name=item["name"],
-                rawg_id=item["id"],
-                image_url=item.get("background_image")
-            ))
-        return results
-
-@app.post("/games", response_model=schemas.Game)
+@app.post("/games/", response_model=schemas.Game)
 def create_game(game: schemas.GameCreate, db: Session = Depends(get_db)):
-    db_game = db.query(models.Game).filter(models.Game.rawg_id == game.rawg_id).first()
+    db_game = db.query(models.Game).filter(models.Game.name == game.name).first()
     if db_game:
         return db_game
-    
-    new_game = models.Game(
-        name=game.name,
-        rawg_id=game.rawg_id,
-        image_url=game.image_url
-    )
-    db.add(new_game)
+    db_game = models.Game(name=game.name, image_url=game.image_url)
+    db.add(db_game)
     db.commit()
-    db.refresh(new_game)
-    return new_game
+    db.refresh(db_game)
+    return db_game
 
-@app.get("/games", response_model=List[schemas.Game])
-def list_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return db.query(models.Game).offset(skip).limit(limit).all()
+@app.get("/games/", response_model=List[schemas.Game])
+def read_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    games = db.query(models.Game).offset(skip).limit(limit).all()
+    return games
 
-# --- Event & Outcome Routes ---
-
-@app.post("/events", response_model=schemas.Event)
-def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
-    # 1. Create the Event
-    db_event = models.Event(
-        game_id=event.game_id,
-        name=event.name,
-        description=event.description,
-        created_by=event.created_by
+# Req #5: Endpoint to get only games the user has interacted with
+@app.get("/games/my/", response_model=List[schemas.Game])
+def read_user_games(user_id: str, db: Session = Depends(get_db)):
+    # Subquery to find distinct game_ids from user logs
+    # Join Log -> Event -> Game
+    user_game_ids = (
+        db.query(models.Event.game_id)
+        .join(models.Log, models.Log.event_id == models.Event.id)
+        .filter(models.Log.user_id == user_id)
+        .distinct()
     )
+    
+    games = db.query(models.Game).filter(models.Game.id.in_(user_game_ids)).all()
+    return games
+
+@app.post("/games/{game_id}/events/", response_model=schemas.Event)
+def create_event(game_id: int, event: schemas.EventCreate, db: Session = Depends(get_db)):
+    # Req #1: Handle Percentage Input. 
+    # If user sends 42, we store 0.42. If user sends 0.5, we store 0.005.
+    # We assume input is always percentage (0-100).
+    final_prob = event.probability / 100.0
+    
+    db_event = models.Event(name=event.name, probability=final_prob, game_id=game_id)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
 
-    # 2. Create the Outcomes
     for outcome in event.outcomes:
-        db_outcome = models.Outcome(
-            event_id=db_event.id,
-            name=outcome.name,
-            expected_probability=outcome.expected_probability
-        )
+        db_outcome = models.Outcome(name=outcome.name, is_success=outcome.is_success, event_id=db_event.id)
         db.add(db_outcome)
     
     db.commit()
     db.refresh(db_event)
+    return db_event
+
+@app.post("/logs/", response_model=List[schemas.Log])
+def create_log(log: schemas.LogCreate, db: Session = Depends(get_db)):
+    # Req #7: Bulk Add Logic
+    created_logs = []
+    count = log.count if log.count and log.count > 0 else 1
     
-    # Construct response
-    response_outcomes = []
-    for o in db_event.outcomes:
-        response_outcomes.append(schemas.OutcomeDisplay(
-            id=o.id,
-            name=o.name,
-            expected_probability=o.expected_probability,
-            global_count=0,
-            user_count=0
-        ))
-
-    return schemas.Event(
-        id=db_event.id,
-        game_id=db_event.game_id,
-        name=db_event.name,
-        description=db_event.description,
-        created_by=db_event.created_by,
-        outcomes=response_outcomes
-    )
-
-@app.get("/events/{game_id}", response_model=List[schemas.Event])
-def get_events_for_game(
-    game_id: int, 
-    user_id: str = Query(..., description="The UUID of the current user"),
-    db: Session = Depends(get_db)
-):
-    events = db.query(models.Event).filter(models.Event.game_id == game_id).all()
-    results = []
+    for _ in range(count):
+        db_log = models.Log(
+            event_id=log.event_id,
+            outcome_id=log.outcome_id,
+            user_id=log.user_id,
+            is_imported=log.is_imported # Req #4: Track imports
+        )
+        db.add(db_log)
+        created_logs.append(db_log)
     
-    for event in events:
-        outcomes_data = []
-        # Accessing event.outcomes will crash if DB schema is old
-        for outcome in event.outcomes:
-            global_count = db.query(models.Log).filter(
-                models.Log.outcome_id == outcome.id
-            ).count()
-            
-            user_count = db.query(models.Log).filter(
-                models.Log.outcome_id == outcome.id,
-                models.Log.user_id == user_id
-            ).count()
-
-            outcomes_data.append(schemas.OutcomeDisplay(
-                id=outcome.id,
-                name=outcome.name,
-                expected_probability=outcome.expected_probability,
-                global_count=global_count,
-                user_count=user_count
-            ))
-
-        results.append(schemas.Event(
-            id=event.id,
-            game_id=event.game_id,
-            name=event.name,
-            description=event.description,
-            created_by=event.created_by,
-            outcomes=outcomes_data
-        ))
-        
-    return results
-
-# --- Logging Routes ---
-
-@app.post("/logs")
-def log_outcome(log_data: schemas.LogCreate, db: Session = Depends(get_db)):
-    outcome = db.query(models.Outcome).filter(models.Outcome.id == log_data.outcome_id).first()
-    if not outcome:
-        raise HTTPException(status_code=404, detail="Outcome not found")
-
-    new_log = models.Log(
-        outcome_id=log_data.outcome_id,
-        user_id=log_data.user_id
-    )
-    db.add(new_log)
     db.commit()
-    return {"status": "success", "message": "Log recorded"}
+    # We don't refresh all 100 logs for speed, just return the list
+    return created_logs
 
-# --- UTILITY ROUTE TO FIX DATABASE ---
-@app.get("/force-reset-db")
-def force_reset_db():
-    """
-    WARNING: This deletes all data and recreates tables.
-    Run this once to fix the '500 Internal Server Error' caused by schema mismatch.
-    """
-    try:
-        models.Base.metadata.drop_all(bind=database.engine)
-        models.Base.metadata.create_all(bind=database.engine)
-        return {"status": "Database successfully wiped and recreated."}
-    except Exception as e:
-        return {"status": "Error", "details": str(e)}
+@app.get("/stats/{event_id}")
+def read_stats(event_id: int, user_id: Optional[str] = None, db: Session = Depends(get_db)):
+    event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    query = db.query(models.Log).filter(models.Log.event_id == event_id)
+    
+    if user_id:
+        # Personal Stats: Show everything (organic + imported)
+        query = query.filter(models.Log.user_id == user_id)
+    else:
+        # Global Stats: Show ONLY organic (Req #4)
+        query = query.filter(models.Log.is_imported == False)
+
+    logs = query.all()
+    total = len(logs)
+    
+    outcome_counts = {}
+    success_count = 0
+
+    for log in logs:
+        # Count outcomes
+        o_id = log.outcome_id
+        if o_id not in outcome_counts:
+            outcome_counts[o_id] = 0
+        outcome_counts[o_id] += 1
+        
+        # Check success for analysis
+        # (Optimized: we could join Outcome table, but simple lookup is fine for now)
+        outcome = next((o for o in event.outcomes if o.id == o_id), None)
+        if outcome and outcome.is_success:
+            success_count += 1
+
+    # Req #8: Analysis Data
+    # Expected hits = Total * Probability
+    expected_hits = total * event.probability
+    
+    # Deviation (Difference between actual and expected)
+    deviation = success_count - expected_hits
+    
+    return {
+        "event_name": event.name,
+        "total_logs": total,
+        "probability": event.probability,
+        "outcomes": outcome_counts,
+        "analysis": {
+            "success_count": success_count,
+            "expected_hits": round(expected_hits, 2),
+            "deviation": round(deviation, 2),
+            "is_above_avg": deviation > 0
+        }
+    }
+
+# Endpoint for Req #2: Export Data
+@app.get("/logs/export/")
+def export_user_logs(user_id: str, db: Session = Depends(get_db)):
+    logs = db.query(models.Log).filter(models.Log.user_id == user_id).all()
+    return logs
