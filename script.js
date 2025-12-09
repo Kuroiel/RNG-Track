@@ -1,230 +1,311 @@
+const API_URL = "http://localhost:8000";
 
-const API_BASE_URL = "https://rng-track.onrender.com";
-
-
-const AppState = {
-    games: [],
-    selectedGameId: null,
-    events: [],
-    selectedEventId: null,
-};
-
-
-const DOMElements = {
-    gameList: document.getElementById('game-list'),
-    gameSearchInput: document.getElementById('game-search-input'),
-    searchResults: document.getElementById('search-results'),
-    eventSelectorCard: document.getElementById('event-selector-card'),
-    eventSelectDropdown: document.getElementById('event-select-dropdown'),
-    newEventNameInput: document.getElementById('new-event-name-input'),
-    addEventButton: document.getElementById('add-event-button'),
-    loggerCard: document.getElementById('logger-card'),
-    currentTrackerName: document.getElementById('current-tracker-name'),
-    logFailureButton: document.getElementById('log-failure-button'),
-    logSuccessButton: document.getElementById('log-success-button'),
-    successCount: document.getElementById('success-count'),
-    failureCount: document.getElementById('failure-count'),
-    totalCount: document.getElementById('total-count'),
-    observedRate: document.getElementById('observed-rate'),
-};
-
-
-async function apiFetch(endpoint, options = {}) {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'An API error occurred');
-    }
-    return response.json();
+// --- State Management ---
+let CURRENT_USER_ID = localStorage.getItem("rng_tracker_uuid");
+if (!CURRENT_USER_ID) {
+  // Generate a simple UUID if not present
+  CURRENT_USER_ID = crypto.randomUUID();
+  localStorage.setItem("rng_tracker_uuid", CURRENT_USER_ID);
 }
 
-const API = {
-    getGames: () => apiFetch('/api/games/'),
-    searchGames: (query) => apiFetch(`/api/search-games/?query=${encodeURIComponent(query)}`),
-    createGame: (gameData) => apiFetch('/api/games/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gameData),
-    }),
-    getEventsForGame: (gameId) => apiFetch(`/api/games/${gameId}/events/`),
-    createEvent: (gameId, eventData) => apiFetch(`/api/games/${gameId}/events/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(eventData),
-    }),
-    logOutcome: (eventId, outcome) => apiFetch(`/api/events/${eventId}/log/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outcome }),
-    }),
-};
+let ACTIVE_GAME_ID = null;
+let VIEW_MODE = "global"; // 'global' or 'user'
+let CACHED_EVENTS = []; // Store data to toggle views instantly
 
-
-
-function renderGameList() {
-    DOMElements.gameList.innerHTML = ''; 
-    AppState.games.forEach(game => {
-        const gameDiv = document.createElement('div');
-        gameDiv.className = 'game-item';
-        gameDiv.dataset.gameId = game.id;
-        gameDiv.innerHTML = `
-            <img src="${game.image_url || 'https://via.placeholder.com/50'}" alt="${game.name}">
-            <span>${game.name}</span>
-        `;
-        if (game.id === AppState.selectedGameId) {
-            gameDiv.classList.add('selected');
-        }
-        DOMElements.gameList.appendChild(gameDiv);
-    });
-}
-
-function renderSearchResults(results) {
-    DOMElements.searchResults.innerHTML = '';
-    results.forEach(game => {
-        const resultDiv = document.createElement('div');
-        resultDiv.className = 'search-result-item';
-        resultDiv.innerHTML = `
-            <img src="${game.image_url || 'https://via.placeholder.com/50'}" alt="${game.name}">
-            <span>${game.name}</span>
-        `;
-
-        resultDiv.addEventListener('click', () => handleCreateGame(game));
-        DOMElements.searchResults.appendChild(resultDiv);
-    });
-}
-
-function renderEventDropdown() {
-    DOMElements.eventSelectDropdown.innerHTML = '<option value="">-- Select or Create a Tracker --</option>';
-    AppState.events.forEach(event => {
-        const option = document.createElement('option');
-        option.value = event.id;
-        option.textContent = event.name;
-        if (event.id === AppState.selectedEventId) {
-            option.selected = true;
-        }
-        DOMElements.eventSelectDropdown.appendChild(option);
-    });
-}
-
-function updateStatsDisplay(event) {
-    const successes = event.success_count;
-    const failures = event.failure_count;
-    const total = successes + failures;
-    DOMElements.successCount.textContent = successes;
-    DOMElements.failureCount.textContent = failures;
-    DOMElements.totalCount.textContent = total;
-    DOMElements.observedRate.textContent = total > 0 ? `${((successes / total) * 100).toFixed(2)}%` : 'N/A';
-}
-
-
-async function handleCreateGame(gameData) {
-    try {
-        await API.createGame(gameData);
-        DOMElements.gameSearchInput.value = '';
-        DOMElements.searchResults.innerHTML = '';
-        await initializeGameList(); // Refresh the list
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-    }
-}
-
-async function handleGameSelection(gameId) {
-    AppState.selectedGameId = gameId;
-    AppState.selectedEventId = null;
-    renderGameList(); 
-    DOMElements.loggerCard.classList.add('hidden');
-
-    try {
-        AppState.events = await API.getEventsForGame(gameId);
-        renderEventDropdown();
-        DOMElements.eventSelectorCard.classList.remove('hidden');
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-    }
-}
-
-async function handleEventCreation() {
-    const eventName = DOMElements.newEventNameInput.value.trim();
-    if (!eventName || !AppState.selectedGameId) return;
-
-    try {
-        const newEvent = await API.createEvent(AppState.selectedGameId, { name: eventName });
-        AppState.events.push(newEvent);
-        AppState.selectedEventId = newEvent.id;
-        DOMElements.newEventNameInput.value = '';
-        renderEventDropdown();
-        handleEventSelection(newEvent.id);
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-    }
-}
-
-function handleEventSelection(eventId) {
-    if (!eventId) {
-        DOMElements.loggerCard.classList.add('hidden');
-        return;
-    }
-    AppState.selectedEventId = parseInt(eventId);
-    const selectedEvent = AppState.events.find(e => e.id === AppState.selectedEventId);
-    if (selectedEvent) {
-        DOMElements.currentTrackerName.textContent = selectedEvent.name;
-        updateStatsDisplay(selectedEvent);
-        DOMElements.loggerCard.classList.remove('hidden');
-    }
-}
-
-async function handleLogOutcome(outcome) {
-    if (!AppState.selectedEventId) return;
-    try {
-        const updatedEvent = await API.logOutcome(AppState.selectedEventId, outcome);
-        const eventIndex = AppState.events.findIndex(e => e.id === updatedEvent.id);
-        if (eventIndex !== -1) {
-            AppState.events[eventIndex] = updatedEvent;
-        }
-        updateStatsDisplay(updatedEvent);
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-    }
-}
-
-
-async function initializeGameList() {
-    try {
-        AppState.games = await API.getGames();
-        renderGameList();
-    } catch (error) {
-        alert(`Failed to load games. Is the backend running? \nError: ${error.message}`);
-    }
-}
-
-
-document.addEventListener('DOMContentLoaded', () => {
-
-    initializeGameList();
-
-    DOMElements.gameSearchInput.addEventListener('input', async (e) => {
-        const query = e.target.value.trim();
-        if (query.length < 3) {
-            DOMElements.searchResults.innerHTML = '';
-            return;
-        }
-        const results = await API.searchGames(query);
-        renderSearchResults(results);
-    });
-
-    DOMElements.gameList.addEventListener('click', (e) => {
-        const gameItem = e.target.closest('.game-item');
-        if (gameItem) {
-            handleGameSelection(parseInt(gameItem.dataset.gameId));
-        }
-    });
-
-    DOMElements.addEventButton.addEventListener('click', handleEventCreation);
-    
-    DOMElements.eventSelectDropdown.addEventListener('change', (e) => {
-        handleEventSelection(e.target.value);
-    });
-
-    DOMElements.logFailureButton.addEventListener('click', () => handleLogOutcome('failure'));
-    DOMElements.logSuccessButton.addEventListener('click', () => handleLogOutcome('success'));
+// --- Initialization ---
+document.addEventListener("DOMContentLoaded", () => {
+  // Load local games initially (optional, or just wait for search)
+  fetchLocalGames();
 });
+
+// --- API Calls ---
+
+async function searchGames() {
+  const query = document.getElementById("game-search").value;
+  if (!query) return;
+
+  try {
+    const res = await fetch(`${API_URL}/games/search?query=${query}`);
+    const games = await res.json();
+    renderGameList(games, true);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to search games.");
+  }
+}
+
+async function fetchLocalGames() {
+  try {
+    const res = await fetch(`${API_URL}/games`);
+    const games = await res.json();
+    renderGameList(games, false);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function selectGame(rawgId, name, imageUrl) {
+  // 1. Ensure game exists in our DB
+  try {
+    const res = await fetch(`${API_URL}/games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, rawg_id: rawgId, image_url: imageUrl }),
+    });
+    const gameData = await res.json();
+
+    // 2. Set Active State
+    ACTIVE_GAME_ID = gameData.id;
+    document.getElementById("search-section").style.display = "none";
+    document.getElementById("games-container").style.display = "none";
+    document.getElementById("active-game-section").style.display = "block";
+    document.getElementById("active-game-title").innerText = gameData.name;
+
+    // 3. Load Events
+    loadEvents();
+  } catch (err) {
+    console.error(err);
+    alert("Error selecting game.");
+  }
+}
+
+async function loadEvents() {
+  if (!ACTIVE_GAME_ID) return;
+
+  try {
+    // Pass user_id to get split stats
+    const res = await fetch(
+      `${API_URL}/events/${ACTIVE_GAME_ID}?user_id=${CURRENT_USER_ID}`
+    );
+    CACHED_EVENTS = await res.json();
+    renderEvents();
+  } catch (err) {
+    console.error(err);
+    alert("Failed to load events.");
+  }
+}
+
+async function logOutcome(outcomeId) {
+  try {
+    const res = await fetch(`${API_URL}/logs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        outcome_id: outcomeId,
+        user_id: CURRENT_USER_ID,
+      }),
+    });
+
+    if (res.ok) {
+      // Reload data to see updated stats
+      loadEvents();
+    } else {
+      alert("Failed to log outcome.");
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function submitNewEvent() {
+  const name = document.getElementById("new-event-name").value;
+  const desc = document.getElementById("new-event-desc").value;
+
+  // Gather outcomes
+  const outcomeRows = document.querySelectorAll(".outcome-input-row");
+  const outcomes = [];
+
+  outcomeRows.forEach((row) => {
+    const oName = row.querySelector(".o-name").value;
+    const oProb = row.querySelector(".o-prob").value;
+    if (oName && oProb) {
+      outcomes.push({
+        name: oName,
+        expected_probability: parseFloat(oProb),
+      });
+    }
+  });
+
+  if (!name || outcomes.length < 2) {
+    alert("Please provide a name and at least 2 outcomes.");
+    return;
+  }
+
+  try {
+    const payload = {
+      name: name,
+      description: desc,
+      game_id: ACTIVE_GAME_ID,
+      created_by: CURRENT_USER_ID,
+      outcomes: outcomes,
+    };
+
+    const res = await fetch(`${API_URL}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      toggleCreateForm();
+      loadEvents(); // Reload list
+      // Clear form
+      document.getElementById("new-event-name").value = "";
+      document.getElementById("new-event-desc").value = "";
+      document.getElementById("outcome-inputs-container").innerHTML = "";
+      addOutcomeRow(); // Add initial rows back
+      addOutcomeRow();
+    } else {
+      alert("Error creating event.");
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// --- UI Logic ---
+
+function renderGameList(games, isSearchResult) {
+  const container = document.getElementById("games-container");
+  container.innerHTML = ""; // Clear current
+
+  if (games.length === 0 && isSearchResult) {
+    container.innerHTML = "<p>No games found.</p>";
+    return;
+  }
+
+  games.forEach((game) => {
+    const card = document.createElement("div");
+    card.className = "game-card";
+    card.onclick = () => selectGame(game.rawg_id, game.name, game.image_url);
+
+    const img = game.image_url
+      ? `<img src="${game.image_url}" alt="${game.name}">`
+      : "";
+    card.innerHTML = `
+            ${img}
+            <h3>${game.name}</h3>
+        `;
+    container.appendChild(card);
+  });
+}
+
+function backToSearch() {
+  ACTIVE_GAME_ID = null;
+  document.getElementById("active-game-section").style.display = "none";
+  document.getElementById("search-section").style.display = "flex";
+  document.getElementById("games-container").style.display = "grid";
+  fetchLocalGames(); // Refresh local list
+}
+
+function toggleViewMode() {
+  const btn = document.getElementById("view-toggle-btn");
+  const label = document.getElementById("view-label");
+
+  if (VIEW_MODE === "global") {
+    VIEW_MODE = "user";
+    label.innerText = "My Personal Stats";
+    btn.innerText = "Switch to Global Stats";
+  } else {
+    VIEW_MODE = "global";
+    label.innerText = "Global Stats";
+    btn.innerText = "Switch to My Stats";
+  }
+  renderEvents();
+}
+
+function renderEvents() {
+  const container = document.getElementById("events-container");
+  container.innerHTML = "";
+
+  if (CACHED_EVENTS.length === 0) {
+    container.innerHTML =
+      "<p>No tracking events created for this game yet. Create one!</p>";
+    return;
+  }
+
+  CACHED_EVENTS.forEach((event) => {
+    const card = document.createElement("div");
+    card.className = "event-card";
+
+    // Calculate Total Logs for the specific view mode (to calculate percentages)
+    let totalLogs = 0;
+    event.outcomes.forEach((o) => {
+      totalLogs += VIEW_MODE === "global" ? o.global_count : o.user_count;
+    });
+
+    // Generate Outcome HTML
+    let outcomesHtml = "";
+    event.outcomes.forEach((outcome) => {
+      const count =
+        VIEW_MODE === "global" ? outcome.global_count : outcome.user_count;
+      const percentage =
+        totalLogs > 0 ? ((count / totalLogs) * 100).toFixed(1) : "0.0";
+      const expected = (outcome.expected_probability * 100).toFixed(1);
+
+      // Determine color based on luck (simple heuristic)
+      // If Observed < Expected, maybe red? If > Expected, green?
+      // Keeping it neutral for now to avoid confusion.
+
+      outcomesHtml += `
+                <div class="outcome-box">
+                    <strong>${outcome.name}</strong>
+                    <div class="stats-row">
+                        <span>Observed: ${percentage}%</span>
+                        <span>Expected: ${expected}%</span>
+                    </div>
+                    <div class="stats-row">
+                        <span>Count: ${count}</span>
+                        <span>Total: ${totalLogs}</span>
+                    </div>
+                    <button class="log-btn" onclick="logOutcome(${outcome.id})">Log This</button>
+                </div>
+            `;
+    });
+
+    card.innerHTML = `
+            <div class="event-header">
+                <div>
+                    <h3>${event.name}</h3>
+                    <small>${event.description || ""}</small>
+                </div>
+                <div style="text-align:right; font-size: 0.8em; color: #888;">
+                    Created by: ${event.created_by.slice(0, 8)}...
+                </div>
+            </div>
+            <div class="outcomes-grid">
+                ${outcomesHtml}
+            </div>
+        `;
+    container.appendChild(card);
+  });
+}
+
+// --- Create Form Logic ---
+
+function toggleCreateForm() {
+  const form = document.getElementById("create-event-form");
+  if (form.style.display === "none" || !form.style.display) {
+    form.style.display = "block";
+    // Init with 2 rows if empty
+    const container = document.getElementById("outcome-inputs-container");
+    if (container.children.length === 0) {
+      addOutcomeRow();
+      addOutcomeRow();
+    }
+  } else {
+    form.style.display = "none";
+  }
+}
+
+function addOutcomeRow() {
+  const container = document.getElementById("outcome-inputs-container");
+  const div = document.createElement("div");
+  div.className = "outcome-input-row";
+  div.innerHTML = `
+        <input type="text" class="o-name" placeholder="Outcome Name (e.g. Rare Drop)">
+        <input type="number" class="o-prob" step="0.01" placeholder="Probability (0.0 - 1.0)">
+        <button class="remove-row-btn" onclick="this.parentElement.remove()">X</button>
+    `;
+  container.appendChild(div);
+}

@@ -1,27 +1,10 @@
-from pydantic import BaseModel, ConfigDict 
 from typing import List, Optional
+from pydantic import BaseModel
 
-
-class EventBase(BaseModel):
-    name: str
-
-class EventCreate(EventBase):
-    pass
-
-class Event(EventBase):
-    id: int
-    success_count: int
-    failure_count: int
-    game_id: int
-
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-
+# --- Game Schemas ---
 class GameBase(BaseModel):
     name: str
-    rawg_id: Optional[int] = None
+    rawg_id: int
     image_url: Optional[str] = None
 
 class GameCreate(GameBase):
@@ -29,7 +12,47 @@ class GameCreate(GameBase):
 
 class Game(GameBase):
     id: int
-    events: List[Event] = []
+    
+    class Config:
+        orm_mode = True
 
+# --- Outcome Schemas ---
+class OutcomeBase(BaseModel):
+    name: str
+    expected_probability: float
 
-    model_config = ConfigDict(from_attributes=True)
+class OutcomeCreate(OutcomeBase):
+    pass
+
+class OutcomeDisplay(OutcomeBase):
+    id: int
+    # These fields are calculated dynamically in the API, not stored directly in this table
+    global_count: int = 0
+    user_count: int = 0
+
+    class Config:
+        orm_mode = True
+
+# --- Event Schemas ---
+class EventBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class EventCreate(EventBase):
+    game_id: int
+    created_by: str # User UUID
+    outcomes: List[OutcomeCreate]
+
+class Event(EventBase):
+    id: int
+    game_id: int
+    created_by: str
+    outcomes: List[OutcomeDisplay] = []
+
+    class Config:
+        orm_mode = True
+
+# --- Log Schemas ---
+class LogCreate(BaseModel):
+    outcome_id: int
+    user_id: str

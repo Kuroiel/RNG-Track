@@ -4,71 +4,273 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
-    <link rel="stylesheet" href="style.css" />
+    <style>
+      :root {
+        --bg-color: #121212;
+        --card-bg: #1e1e1e;
+        --primary: #bb86fc;
+        --text-main: #e0e0e0;
+        --text-muted: #a0a0a0;
+        --border: #333;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        margin: 0;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      h1,
+      h2,
+      h3 {
+        color: var(--primary);
+      }
+
+      /* Search & Game List */
+      #search-section {
+        margin-bottom: 20px;
+        display: flex;
+        gap: 10px;
+      }
+
+      input,
+      button,
+      select {
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text-main);
+      }
+
+      button {
+        cursor: pointer;
+        background-color: #333;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background-color: #444;
+      }
+      button.primary {
+        background-color: var(--primary);
+        color: #000;
+        font-weight: bold;
+      }
+
+      .game-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+
+      .game-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+        cursor: pointer;
+      }
+      .game-card:hover {
+        border-color: var(--primary);
+      }
+      .game-card img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        border-radius: 4px;
+      }
+
+      /* Active Game Section */
+      #active-game-section {
+        display: none;
+      }
+
+      .controls-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        background: var(--card-bg);
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      .toggle-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* Event Cards */
+      .event-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .event-header {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+      }
+
+      .outcomes-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+      }
+
+      .outcome-box {
+        background: #2a2a2a;
+        padding: 10px;
+        border-radius: 5px;
+        text-align: center;
+      }
+
+      .stats-row {
+        font-size: 0.9em;
+        color: var(--text-muted);
+        margin: 5px 0;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .log-btn {
+        width: 100%;
+        margin-top: 5px;
+        padding: 8px;
+        background: #3a3a3a;
+        border: 1px solid var(--border);
+      }
+      .log-btn:hover {
+        background: var(--primary);
+        color: black;
+      }
+
+      /* Modal for New Event */
+      #create-event-form {
+        background: #252525;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border: 1px solid var(--border);
+        display: none; /* Hidden by default */
+      }
+
+      .outcome-input-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .outcome-input-row input {
+        flex: 1;
+      }
+      .remove-row-btn {
+        background: #cf6679;
+        color: white;
+        border: none;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
-    <header>
-      <h1>RNG Tracker</h1>
-      <p>Salt from statistics.</p>
-    </header>
+    <div class="container">
+      <header>
+        <h1>RNG Tracker</h1>
+        <p class="subtitle">
+          Track drop rates, compare with global stats, and detect anomalies.
+        </p>
+      </header>
 
-    <main>
-      <div class="card" id="game-selector-card">
-        <h2>Step 1: Select Your Game</h2>
-        <div id="game-list"></div>
-        <div id="add-game-section">
-          <h3>Add a New Game</h3>
-          <input
-            type="text"
-            id="game-search-input"
-            placeholder="Search for a game (e.g., Goddess of Victory: Nikke)"
-          />
-          <div id="search-results"></div>
-        </div>
+      <!-- STEP 1: Search Game -->
+      <div id="search-section">
+        <input
+          type="text"
+          id="game-search"
+          placeholder="Search for a game..."
+          style="flex: 1"
+        />
+        <button onclick="searchGames()" class="primary">Search</button>
       </div>
 
-      <div class="card hidden" id="event-selector-card">
-        <h2>Step 2: Select Your Tracker</h2>
-        <select id="event-select-dropdown">
-          <option value="">-- Select an Event --</option>
-        </select>
-        <div id="add-event-section">
-          <input
-            type="text"
-            id="new-event-name-input"
-            placeholder="New tracker name (e.g., Mount Drop)"
-          />
-          <button id="add-event-button">Create Tracker</button>
-        </div>
-      </div>
+      <div id="games-container" class="game-list"></div>
 
-      <div class="card hidden" id="logger-card">
-        <h2>Step 3: Log Your Attempts</h2>
-        <h3 id="current-tracker-name"></h3>
-        <div class="logger-buttons">
-          <button id="log-failure-button">Log Failure</button>
-          <button id="log-success-button">Log Success</button>
-        </div>
-        <div id="stats-display">
-          <div class="stat-item">
-            <span class="stat-title">Successes</span>
-            <span id="success-count" class="stat-value">0</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-title">Failures</span>
-            <span id="failure-count" class="stat-value">0</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-title">Total Attempts</span>
-            <span id="total-count" class="stat-value">0</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-title">Observed Rate</span>
-            <span id="observed-rate" class="stat-value">N/A</span>
+      <!-- STEP 2: Active Game View -->
+      <div id="active-game-section">
+        <button onclick="backToSearch()" style="margin-bottom: 10px">
+          &larr; Back to Search
+        </button>
+
+        <div class="controls-header">
+          <h2 id="active-game-title" style="margin: 0">Game Title</h2>
+
+          <div class="toggle-container">
+            <span id="view-label">Global Stats</span>
+            <button id="view-toggle-btn" onclick="toggleViewMode()">
+              Switch to My Stats
+            </button>
           </div>
         </div>
+
+        <button
+          onclick="toggleCreateForm()"
+          class="primary"
+          style="width: 100%; margin-bottom: 20px"
+        >
+          + Create New Tracking Event
+        </button>
+
+        <!-- Create Event Form -->
+        <div id="create-event-form">
+          <h3>Create New Event Template</h3>
+          <div style="margin-bottom: 10px">
+            <label>Event Name (e.g., "Raid Boss Drop")</label>
+            <input type="text" id="new-event-name" style="width: 100%" />
+          </div>
+          <div style="margin-bottom: 10px">
+            <label>Description</label>
+            <input type="text" id="new-event-desc" style="width: 100%" />
+          </div>
+
+          <h4>Outcomes</h4>
+          <div id="outcome-inputs-container">
+            <!-- Dynamic rows go here -->
+          </div>
+          <button
+            onclick="addOutcomeRow()"
+            style="margin-bottom: 15px; width: 100%"
+          >
+            + Add Another Outcome
+          </button>
+
+          <div style="text-align: right">
+            <button onclick="toggleCreateForm()">Cancel</button>
+            <button onclick="submitNewEvent()" class="primary">
+              Save Event
+            </button>
+          </div>
+        </div>
+
+        <!-- Events List -->
+        <div id="events-container"></div>
       </div>
-    </main>
+    </div>
 
     <script src="script.js"></script>
   </body>
