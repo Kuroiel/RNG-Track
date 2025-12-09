@@ -1,10 +1,22 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from typing import List, Optional
-import models, schemas
-from database import SessionLocal, engine
+import sys
+import os
+
+# --- DEPLOYMENT FIX: Add current directory to sys.path ---
+# This ensures Python finds 'models.py' and 'database.py' even if run from root
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+# ---------------------------------------------------------
+
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from typing import List, Optional
+
+# Now these imports will work correctly on Render
+import models
+import schemas
+from database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -25,6 +37,24 @@ def get_db():
     finally:
         db.close()
 
+# --- SERVE FRONTEND (Makes deployment easier) ---
+@app.get("/")
+async def read_index():
+    # Looks for index.html in the folder above 'backend'
+    file_path = os.path.join(current_dir, "../index.html")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "index.html not found"}
+
+@app.get("/script.js")
+async def read_script():
+    # Looks for script.js in the folder above 'backend'
+    file_path = os.path.join(current_dir, "../script.js")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "script.js not found"}
+# ------------------------------------------------
+
 @app.post("/games/", response_model=schemas.Game)
 def create_game(game: schemas.GameCreate, db: Session = Depends(get_db)):
     db_game = db.query(models.Game).filter(models.Game.name == game.name).first()
@@ -41,28 +71,20 @@ def read_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     games = db.query(models.Game).offset(skip).limit(limit).all()
     return games
 
-# Req #5: Endpoint to get only games the user has interacted with
 @app.get("/games/my/", response_model=List[schemas.Game])
 def read_user_games(user_id: str, db: Session = Depends(get_db)):
-    # Subquery to find distinct game_ids from user logs
-    # Join Log -> Event -> Game
     user_game_ids = (
         db.query(models.Event.game_id)
         .join(models.Log, models.Log.event_id == models.Event.id)
         .filter(models.Log.user_id == user_id)
         .distinct()
     )
-    
     games = db.query(models.Game).filter(models.Game.id.in_(user_game_ids)).all()
     return games
 
 @app.post("/games/{game_id}/events/", response_model=schemas.Event)
 def create_event(game_id: int, event: schemas.EventCreate, db: Session = Depends(get_db)):
-    # Req #1: Handle Percentage Input. 
-    # If user sends 42, we store 0.42. If user sends 0.5, we store 0.005.
-    # We assume input is always percentage (0-100).
     final_prob = event.probability / 100.0
-    
     db_event = models.Event(name=event.name, probability=final_prob, game_id=game_id)
     db.add(db_event)
     db.commit()
@@ -78,7 +100,6 @@ def create_event(game_id: int, event: schemas.EventCreate, db: Session = Depends
 
 @app.post("/logs/", response_model=List[schemas.Log])
 def create_log(log: schemas.LogCreate, db: Session = Depends(get_db)):
-    # Req #7: Bulk Add Logic
     created_logs = []
     count = log.count if log.count and log.count > 0 else 1
     
@@ -87,13 +108,12 @@ def create_log(log: schemas.LogCreate, db: Session = Depends(get_db)):
             event_id=log.event_id,
             outcome_id=log.outcome_id,
             user_id=log.user_id,
-            is_imported=log.is_imported # Req #4: Track imports
+            is_imported=log.is_imported
         )
         db.add(db_log)
         created_logs.append(db_log)
     
     db.commit()
-    # We don't refresh all 100 logs for speed, just return the list
     return created_logs
 
 @app.get("/stats/{event_id}")
@@ -105,10 +125,8 @@ def read_stats(event_id: int, user_id: Optional[str] = None, db: Session = Depen
     query = db.query(models.Log).filter(models.Log.event_id == event_id)
     
     if user_id:
-        # Personal Stats: Show everything (organic + imported)
         query = query.filter(models.Log.user_id == user_id)
     else:
-        # Global Stats: Show ONLY organic (Req #4)
         query = query.filter(models.Log.is_imported == False)
 
     logs = query.all()
@@ -118,23 +136,16 @@ def read_stats(event_id: int, user_id: Optional[str] = None, db: Session = Depen
     success_count = 0
 
     for log in logs:
-        # Count outcomes
         o_id = log.outcome_id
         if o_id not in outcome_counts:
             outcome_counts[o_id] = 0
         outcome_counts[o_id] += 1
         
-        # Check success for analysis
-        # (Optimized: we could join Outcome table, but simple lookup is fine for now)
         outcome = next((o for o in event.outcomes if o.id == o_id), None)
         if outcome and outcome.is_success:
             success_count += 1
 
-    # Req #8: Analysis Data
-    # Expected hits = Total * Probability
     expected_hits = total * event.probability
-    
-    # Deviation (Difference between actual and expected)
     deviation = success_count - expected_hits
     
     return {
@@ -150,7 +161,6 @@ def read_stats(event_id: int, user_id: Optional[str] = None, db: Session = Depen
         }
     }
 
-# Endpoint for Req #2: Export Data
 @app.get("/logs/export/")
 def export_user_logs(user_id: str, db: Session = Depends(get_db)):
     logs = db.query(models.Log).filter(models.Log.user_id == user_id).all()
