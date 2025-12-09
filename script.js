@@ -14,7 +14,7 @@ let CACHED_EVENTS = []; // Store data to toggle views instantly
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
-  // Load local games initially
+  // Load local games initially (optional, or just wait for search)
   fetchLocalGames();
 });
 

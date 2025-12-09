@@ -15,10 +15,10 @@ app = FastAPI()
 # Allow CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
 )
 
 # Dependency to get DB session
@@ -30,7 +30,6 @@ def get_db():
         db.close()
 
 # RAWG API Configuration
-# Reads from environment variable, defaults to None if not found
 RAWG_API_KEY = os.getenv("RAWG_API_KEY") 
 RAWG_BASE_URL = "https://api.rawg.io/api/games"
 
@@ -38,9 +37,6 @@ RAWG_BASE_URL = "https://api.rawg.io/api/games"
 
 @app.get("/games/search", response_model=List[schemas.GameBase])
 async def search_games(query: str):
-    """
-    Searches for games using the RAWG API.
-    """
     if not RAWG_API_KEY:
         raise HTTPException(status_code=500, detail="Server Error: RAWG API Key not configured.")
 
@@ -64,9 +60,6 @@ async def search_games(query: str):
 
 @app.post("/games", response_model=schemas.Game)
 def create_game(game: schemas.GameCreate, db: Session = Depends(get_db)):
-    """
-    Adds a game to the local database if it doesn't exist.
-    """
     db_game = db.query(models.Game).filter(models.Game.rawg_id == game.rawg_id).first()
     if db_game:
         return db_game
@@ -83,18 +76,12 @@ def create_game(game: schemas.GameCreate, db: Session = Depends(get_db)):
 
 @app.get("/games", response_model=List[schemas.Game])
 def list_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """
-    Lists games tracked locally.
-    """
     return db.query(models.Game).offset(skip).limit(limit).all()
 
 # --- Event & Outcome Routes ---
 
 @app.post("/events", response_model=schemas.Event)
 def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
-    """
-    Creates a new tracking event (template) with multiple outcomes.
-    """
     # 1. Create the Event
     db_event = models.Event(
         game_id=event.game_id,
@@ -116,11 +103,9 @@ def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
         db.add(db_outcome)
     
     db.commit()
-    
-    # Refresh to load relationships
     db.refresh(db_event)
     
-    # Construct response with zero counts (since it's new)
+    # Construct response
     response_outcomes = []
     for o in db_event.outcomes:
         response_outcomes.append(schemas.OutcomeDisplay(
@@ -146,23 +131,17 @@ def get_events_for_game(
     user_id: str = Query(..., description="The UUID of the current user"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all events for a game. 
-    Dynamically calculates Global vs User statistics by counting logs.
-    """
     events = db.query(models.Event).filter(models.Event.game_id == game_id).all()
-    
     results = []
     
     for event in events:
         outcomes_data = []
+        # Accessing event.outcomes will crash if DB schema is old
         for outcome in event.outcomes:
-            # Count Global Logs
             global_count = db.query(models.Log).filter(
                 models.Log.outcome_id == outcome.id
             ).count()
             
-            # Count User Logs
             user_count = db.query(models.Log).filter(
                 models.Log.outcome_id == outcome.id,
                 models.Log.user_id == user_id
@@ -191,10 +170,6 @@ def get_events_for_game(
 
 @app.post("/logs")
 def log_outcome(log_data: schemas.LogCreate, db: Session = Depends(get_db)):
-    """
-    Log a specific outcome for a user.
-    """
-    # Verify outcome exists
     outcome = db.query(models.Outcome).filter(models.Outcome.id == log_data.outcome_id).first()
     if not outcome:
         raise HTTPException(status_code=404, detail="Outcome not found")
@@ -206,3 +181,17 @@ def log_outcome(log_data: schemas.LogCreate, db: Session = Depends(get_db)):
     db.add(new_log)
     db.commit()
     return {"status": "success", "message": "Log recorded"}
+
+# --- UTILITY ROUTE TO FIX DATABASE ---
+@app.get("/force-reset-db")
+def force_reset_db():
+    """
+    WARNING: This deletes all data and recreates tables.
+    Run this once to fix the '500 Internal Server Error' caused by schema mismatch.
+    """
+    try:
+        models.Base.metadata.drop_all(bind=database.engine)
+        models.Base.metadata.create_all(bind=database.engine)
+        return {"status": "Database successfully wiped and recreated."}
+    except Exception as e:
+        return {"status": "Error", "details": str(e)}
