@@ -1,261 +1,418 @@
-// Change API_URL to empty string so it uses the current domain automatically.
-// This works because we are now serving this script from the Backend.
-const API_URL = "";
+const API_URL = ""; // Relative path for production
 
-let userId = localStorage.getItem("rng_user_id");
+// --- State Management ---
+let currentUser = null;
+let token = localStorage.getItem("token");
 
-if (!userId) {
-  userId = crypto.randomUUID();
-  localStorage.setItem("rng_user_id", userId);
-}
+// --- DOM Elements ---
+const authSection = document.getElementById("auth-section");
+const dashboardSection = document.getElementById("dashboard-section");
+const loginForm = document.getElementById("login-form");
+const registerForm = document.getElementById("register-form");
+const gamesList = document.getElementById("games-list");
+const eventsList = document.getElementById("events-list");
+const statsDiv = document.getElementById("stats");
+const logMessage = document.getElementById("log-message");
+const authMessage = document.getElementById("auth-message");
+const toggleAuthBtn = document.getElementById("toggle-auth-mode");
+const authTitle = document.getElementById("auth-title");
+const logoutBtn = document.getElementById("logout-btn");
 
-// Req #6: Default to My Stats
-let currentView = "my";
-document.getElementById("viewToggle").checked = true;
-
-document.getElementById("viewToggle").addEventListener("change", (e) => {
-  currentView = e.target.checked ? "my" : "global";
-  fetchGames();
+// --- Initialization ---
+document.addEventListener("DOMContentLoaded", () => {
+  if (token) {
+    // Ideally verify token validity here, for now assume valid
+    showDashboard();
+    loadGames();
+  } else {
+    showAuth();
+  }
 });
 
-async function fetchGames() {
-  let url = `${API_URL}/games/`;
-  if (currentView === "my") {
-    url = `${API_URL}/games/my/?user_id=${userId}`;
-  }
+// --- Auth Functions ---
+function showAuth() {
+  authSection.style.display = "flex";
+  dashboardSection.style.display = "none";
+  logoutBtn.style.display = "none";
+}
 
-  const response = await fetch(url);
-  const games = await response.json();
+function showDashboard() {
+  authSection.style.display = "none";
+  dashboardSection.style.display = "block";
+  logoutBtn.style.display = "inline-block";
+}
 
-  if (currentView === "my") {
-    const allResponse = await fetch(`${API_URL}/games/`);
-    const allGames = await allResponse.json();
-    populateGameSelect(allGames);
+let isLoginMode = true;
+toggleAuthBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  isLoginMode = !isLoginMode;
+  if (isLoginMode) {
+    loginForm.style.display = "flex";
+    registerForm.style.display = "none";
+    authTitle.innerText = "Login";
+    toggleAuthBtn.innerText = "Need an account? Register";
   } else {
-    populateGameSelect(games);
+    loginForm.style.display = "none";
+    registerForm.style.display = "flex";
+    authTitle.innerText = "Register";
+    toggleAuthBtn.innerText = "Have an account? Login";
   }
+  authMessage.innerText = "";
+});
 
-  const container = document.getElementById("trackerContainer");
-  container.innerHTML = "";
+logoutBtn.addEventListener("click", () => {
+  localStorage.removeItem("token");
+  token = null;
+  location.reload();
+});
 
-  games
-    .slice()
-    .reverse()
-    .forEach((game) => {
-      const gameDiv = document.createElement("div");
-      gameDiv.className = "card";
-      gameDiv.innerHTML = `
-            <div class="game-header">
-                <h3>${game.name}</h3>
-            </div>
-            <div id="events-${game.id}"></div>
-        `;
-      container.appendChild(gameDiv);
-      game.events.forEach((event) => renderEvent(game.id, event));
+// Handle Login
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const formData = new FormData(loginForm);
+
+  try {
+    const response = await fetch(`${API_URL}/token`, {
+      method: "POST",
+      body: formData,
     });
-}
 
-function populateGameSelect(games) {
-  const select = document.getElementById("gameSelect");
-  select.innerHTML = '<option value="">Select Existing Game</option>';
-  games.forEach((g) => {
-    const opt = document.createElement("option");
-    opt.value = g.id;
-    opt.innerText = g.name;
-    select.appendChild(opt);
-  });
-}
+    if (!response.ok) throw new Error("Invalid credentials");
 
-async function renderEvent(gameId, event) {
-  const container = document.getElementById(`events-${gameId}`);
-  const eventDiv = document.createElement("div");
-  eventDiv.className = "outcome-group";
-
-  const statsUrl = new URL(
-    window.location.origin + `${API_URL}/stats/${event.id}`
-  );
-  if (currentView === "my") {
-    statsUrl.searchParams.append("user_id", userId);
+    const data = await response.json();
+    token = data.access_token;
+    localStorage.setItem("token", token);
+    showDashboard();
+    loadGames();
+  } catch (err) {
+    authMessage.style.color = "red";
+    authMessage.innerText = err.message;
   }
+});
 
-  const statsRes = await fetch(statsUrl);
-  const stats = await statsRes.json();
+// Handle Register
+registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = registerForm.username.value;
+  const password = registerForm.password.value;
 
-  let outcomesHtml = "";
-  event.outcomes.forEach((oc) => {
-    const count = stats.outcomes[oc.id] || 0;
-    const pct =
-      stats.total_logs > 0 ? ((count / stats.total_logs) * 100).toFixed(1) : 0;
-
-    outcomesHtml += `
-            <div style="margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between;">
-                <span>${oc.name}: <strong>${count}</strong> (${pct}%)</span>
-                <div>
-                    <input type="number" id="count-${oc.id}" class="bulk-input" value="1" min="1">
-                    <button class="btn" onclick="logOutcome(${event.id}, ${oc.id})">Log</button>
-                </div>
-            </div>
-        `;
-  });
-
-  let analysisHtml = "";
-  if (stats.total_logs > 0) {
-    const diff = stats.analysis.deviation;
-    const diffClass = diff >= 0 ? "good-luck" : "bad-luck";
-    const sign = diff > 0 ? "+" : "";
-
-    analysisHtml = `
-            <div class="analysis-box">
-                <strong>Analysis:</strong><br>
-                Expected Successes: ${stats.analysis.expected_hits}<br>
-                Actual Successes: ${stats.analysis.success_count}<br>
-                Deviation: <span class="${diffClass}">${sign}${diff}</span>
-            </div>
-        `;
-  }
-
-  eventDiv.innerHTML = `
-        <h4>${event.name} (Rate: ${(event.probability * 100).toFixed(2)}%)</h4>
-        ${outcomesHtml}
-        <div class="stats-row">
-            <span>Total: ${stats.total_logs}</span>
-        </div>
-        ${analysisHtml}
-    `;
-  container.appendChild(eventDiv);
-}
-
-async function logOutcome(eventId, outcomeId) {
-  const countInput = document.getElementById(`count-${outcomeId}`);
-  const count = parseInt(countInput.value) || 1;
-
-  await fetch(`${API_URL}/logs/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event_id: eventId,
-      outcome_id: outcomeId,
-      user_id: userId,
-      count: count,
-      is_imported: false,
-    }),
-  });
-
-  countInput.value = 1;
-  fetchGames();
-}
-
-async function createEvent() {
-  const gameSelect = document.getElementById("gameSelect");
-  const newGameName = document.getElementById("newGameName").value;
-  let gameId = gameSelect.value;
-
-  if (!gameId && !newGameName) return alert("Select or name a game");
-
-  if (!gameId && newGameName) {
-    const gRes = await fetch(`${API_URL}/games/`, {
+  try {
+    const response = await fetch(`${API_URL}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newGameName }),
+      body: JSON.stringify({ username, password }),
     });
-    const newGame = await gRes.json();
-    gameId = newGame.id;
-  }
 
-  const name = document.getElementById("eventName").value;
-  const prob = parseFloat(document.getElementById("eventProb").value);
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.detail || "Registration failed");
+    }
+
+    // Auto login after register
+    const loginData = new FormData();
+    loginData.append("username", username);
+    loginData.append("password", password);
+
+    const loginRes = await fetch(`${API_URL}/token`, {
+      method: "POST",
+      body: loginData,
+    });
+
+    const data = await loginRes.json();
+    token = data.access_token;
+    localStorage.setItem("token", token);
+    showDashboard();
+    loadGames();
+  } catch (err) {
+    authMessage.style.color = "red";
+    authMessage.innerText = err.message;
+  }
+});
+
+// --- Game & Event Logic ---
+
+async function loadGames() {
+  try {
+    const response = await fetch(`${API_URL}/games/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const games = await response.json();
+    gamesList.innerHTML = "<h3>Select a Game</h3>";
+
+    const grid = document.createElement("div");
+    grid.className = "card-grid";
+
+    games.forEach((game) => {
+      const btn = document.createElement("button");
+      btn.className = "card";
+      btn.innerText = game.name;
+      btn.onclick = () => loadEvents(game.id);
+      grid.appendChild(btn);
+    });
+    gamesList.appendChild(grid);
+
+    // Add "Create Game" button
+    const createDiv = document.createElement("div");
+    createDiv.className = "create-section";
+    createDiv.innerHTML = `
+            <input type="text" id="new-game-name" placeholder="New Game Name">
+            <button onclick="createGame()">Add Game</button>
+        `;
+    gamesList.appendChild(createDiv);
+  } catch (err) {
+    console.error("Failed to load games", err);
+  }
+}
+
+async function createGame() {
+  const nameInput = document.getElementById("new-game-name");
+  if (!nameInput.value) return;
+
+  await fetch(`${API_URL}/games/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name: nameInput.value }),
+  });
+  nameInput.value = "";
+  loadGames();
+}
+
+async function loadEvents(gameId) {
+  eventsList.innerHTML = "<p>Loading events...</p>";
+  statsDiv.innerHTML = "";
+
+  const response = await fetch(`${API_URL}/events/${gameId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const events = await response.json();
+
+  eventsList.innerHTML = "<h3>Select an Event</h3>";
+  const grid = document.createElement("div");
+  grid.className = "card-grid";
+
+  events.forEach((event) => {
+    const btn = document.createElement("button");
+    btn.className = "card";
+    btn.innerText = event.name;
+    btn.onclick = () => loadEventDetails(event);
+    grid.appendChild(btn);
+  });
+  eventsList.appendChild(grid);
+
+  // Add Create Event Section
+  const createDiv = document.createElement("div");
+  createDiv.className = "create-section";
+  createDiv.innerHTML = `
+        <h4>Create New Event</h4>
+        <input type="text" id="new-event-name" placeholder="Event Name">
+        <div id="outcomes-inputs">
+            <div class="outcome-row">
+                <input type="text" placeholder="Outcome (e.g. Win)" class="out-name">
+                <input type="number" placeholder="Prob % (e.g. 50)" class="out-prob">
+            </div>
+        </div>
+        <button onclick="addOutcomeRow()" class="secondary-btn">+ Outcome</button>
+        <button onclick="createEvent(${gameId})">Save Event</button>
+    `;
+  eventsList.appendChild(createDiv);
+}
+
+function addOutcomeRow() {
+  const div = document.createElement("div");
+  div.className = "outcome-row";
+  div.innerHTML = `
+        <input type="text" placeholder="Outcome" class="out-name">
+        <input type="number" placeholder="Prob %" class="out-prob">
+    `;
+  document.getElementById("outcomes-inputs").appendChild(div);
+}
+
+async function createEvent(gameId) {
+  const name = document.getElementById("new-event-name").value;
+  const outcomeRows = document.querySelectorAll(".outcome-row");
 
   const outcomes = [];
-  document.querySelectorAll("#outcomesList > div").forEach((div) => {
-    const oName = div.querySelector(".outcome-name").value;
-    const oSucc = div.querySelector(".outcome-success").checked;
-    if (oName) outcomes.push({ name: oName, is_success: oSucc });
-  });
-
-  if (!name || isNaN(prob) || outcomes.length === 0)
-    return alert("Fill all fields");
-
-  await fetch(`${API_URL}/games/${gameId}/events/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: name,
-      probability: prob,
-      outcomes: outcomes,
-    }),
-  });
-
-  location.reload();
-}
-
-function addOutcomeField() {
-  const div = document.createElement("div");
-  div.innerHTML = `
-        <input type="text" placeholder="Outcome Name" class="outcome-name">
-        <label><input type="checkbox" class="outcome-success"> Is Success?</label>
-    `;
-  document.getElementById("outcomesList").appendChild(div);
-}
-
-async function exportData() {
-  const response = await fetch(`${API_URL}/logs/export/?user_id=${userId}`);
-  const logs = await response.json();
-
-  const data = {
-    user_id: userId,
-    logs: logs,
-  };
-
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `rng-track-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-}
-
-async function importData(input) {
-  const file = input.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (!confirm(`Import data for User ID: ${data.user_id}?`)) return;
-
-      if (data.user_id) {
-        localStorage.setItem("rng_user_id", data.user_id);
-        userId = data.user_id;
-      }
-
-      if (data.logs && data.logs.length > 0) {
-        if (confirm("Upload logs as 'Imported' entries?")) {
-          for (const log of data.logs) {
-            await fetch(`${API_URL}/logs/`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                event_id: log.event_id,
-                outcome_id: log.outcome_id,
-                user_id: userId,
-                count: 1,
-                is_imported: true,
-              }),
-            });
-          }
-          alert("Imported.");
-        }
-      }
-      location.reload();
-    } catch (err) {
-      console.error(err);
-      alert("Error parsing JSON");
+  outcomeRows.forEach((row) => {
+    const outName = row.querySelector(".out-name").value;
+    const outProb = row.querySelector(".out-prob").value;
+    if (outName && outProb) {
+      outcomes.push({ name: outName, probability: parseFloat(outProb) });
     }
-  };
-  reader.readAsText(file);
+  });
+
+  if (!name || outcomes.length === 0) {
+    alert("Please fill in event name and at least one outcome.");
+    return;
+  }
+
+  await fetch(`${API_URL}/events/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name: name, game_id: gameId, outcomes: outcomes }),
+  });
+  loadEvents(gameId);
 }
 
-fetchGames();
+let currentEventId = null;
+
+async function loadEventDetails(event) {
+  currentEventId = event.id;
+
+  // Build Log Interface
+  let html = `<h3>${event.name} - Log Result</h3>`;
+  html += `<div class="card-grid">`;
+
+  event.outcomes.forEach((outcome) => {
+    html += `<button class="card action-card" onclick="logOutcome('${outcome.name}', '${event.name}')">${outcome.name}</button>`;
+  });
+  html += `</div>`;
+
+  // Bulk Log
+  html += `
+        <div class="bulk-log">
+            <h4>Bulk Log</h4>
+            <select id="bulk-outcome">
+                ${event.outcomes
+                  .map((o) => `<option value="${o.name}">${o.name}</option>`)
+                  .join("")}
+            </select>
+            <input type="number" id="bulk-count" value="10" min="1">
+            <button onclick="bulkLog()">Submit Bulk</button>
+        </div>
+    `;
+
+  statsDiv.innerHTML = html;
+  loadStats(event.id);
+}
+
+async function logOutcome(outcomeName, eventName) {
+  await fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ outcome_name: outcomeName }),
+  });
+
+  showFeedback(`Logged: ${outcomeName}`);
+  loadStats(currentEventId);
+}
+
+async function bulkLog() {
+  const outcomeName = document.getElementById("bulk-outcome").value;
+  const count = parseInt(document.getElementById("bulk-count").value);
+
+  if (count > 100) {
+    alert("Max 100 at a time");
+    return;
+  }
+
+  // Parallel requests (could be optimized on backend to accept arrays, but this works for now)
+  const promises = [];
+  for (let i = 0; i < count; i++) {
+    promises.push(
+      fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ outcome_name: outcomeName }),
+      })
+    );
+  }
+
+  await Promise.all(promises);
+  showFeedback(`Logged ${count}x ${outcomeName}`);
+  loadStats(currentEventId);
+}
+
+function showFeedback(msg) {
+  logMessage.innerText = msg;
+  logMessage.style.opacity = 1;
+  setTimeout(() => {
+    logMessage.style.opacity = 0;
+  }, 2000);
+}
+
+async function loadStats(eventId) {
+  // Pass token explicitly to get user stats
+  const response = await fetch(`${API_URL}/stats/${eventId}?token=${token}`);
+  const data = await response.json();
+
+  const container = document.createElement("div");
+  container.className = "stats-container";
+
+  // Global Stats Table
+  let html = `
+        <h4>Global Statistics (Total: ${data.total_attempts})</h4>
+        <table class="stats-table">
+            <tr>
+                <th>Outcome</th>
+                <th>Count</th>
+                <th>Actual %</th>
+                <th>Expected %</th>
+                <th>Deviation</th>
+            </tr>
+    `;
+
+  for (const [outcome, count] of Object.entries(data.outcomes)) {
+    const actual = data.actual_rates[outcome].toFixed(2);
+    const expected = data.expected_rates[outcome];
+    const dev = data.deviation[outcome].toFixed(2);
+    const color =
+      Math.abs(dev) > 5 ? "red" : Math.abs(dev) < 1 ? "green" : "black";
+
+    html += `
+            <tr>
+                <td>${outcome}</td>
+                <td>${count}</td>
+                <td>${actual}%</td>
+                <td>${expected}%</td>
+                <td style="color:${color}">${dev > 0 ? "+" : ""}${dev}%</td>
+            </tr>
+        `;
+  }
+  html += `</table>`;
+
+  // User Stats Table
+  if (data.user_total_attempts > 0) {
+    html += `
+            <h4 style="margin-top:20px; color:#007bff">My Statistics (Total: ${data.user_total_attempts})</h4>
+            <table class="stats-table user-stats">
+                <tr>
+                    <th>Outcome</th>
+                    <th>My Count</th>
+                    <th>My Rate %</th>
+                </tr>
+        `;
+
+    for (const [outcome, count] of Object.entries(data.user_outcomes)) {
+      const actual = data.user_actual_rates[outcome].toFixed(2);
+      html += `
+                <tr>
+                    <td>${outcome}</td>
+                    <td>${count}</td>
+                    <td>${actual}%</td>
+                </tr>
+            `;
+    }
+    html += `</table>`;
+  } else {
+    html += `<p style="margin-top:20px; color:#666">You haven't logged any data for this event yet.</p>`;
+  }
+
+  // Append to stats div (keeping the log buttons above)
+  const existingTable = statsDiv.querySelector(".stats-container");
+  if (existingTable) existingTable.remove();
+
+  container.innerHTML = html;
+  statsDiv.appendChild(container);
+}

@@ -4,163 +4,83 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
-    <style>
-      body {
-        font-family: sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-      }
-      .card {
-        border: 1px solid #ccc;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-radius: 5px;
-      }
-      .game-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .game-img {
-        width: 50px;
-        height: 50px;
-        object-fit: cover;
-        border-radius: 5px;
-        margin-right: 10px;
-      }
-      .btn {
-        cursor: pointer;
-        padding: 5px 10px;
-        background: #eee;
-        border: 1px solid #999;
-        border-radius: 3px;
-      }
-      .btn:hover {
-        background: #ddd;
-      }
-      .btn-primary {
-        background: #007bff;
-        color: white;
-        border-color: #007bff;
-      }
-      .btn-primary:hover {
-        background: #0056b3;
-      }
-      .hidden {
-        display: none;
-      }
-      .stats-row {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 10px;
-      }
-      .outcome-group {
-        margin-top: 10px;
-        padding: 10px;
-        background: #f9f9f9;
-        border: 1px solid #eee;
-      }
-
-      /* New Styles for Bulk Add & Analysis */
-      .bulk-input {
-        width: 50px;
-        margin-right: 5px;
-        padding: 5px;
-      }
-      .analysis-box {
-        background-color: #eef;
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 10px;
-        border: 1px solid #ccd;
-      }
-      .good-luck {
-        color: green;
-        font-weight: bold;
-      }
-      .bad-luck {
-        color: red;
-        font-weight: bold;
-      }
-      .header-controls {
-        margin-bottom: 20px;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-    </style>
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <h1>RNG Tracker</h1>
+    <header>
+      <h1>RNG Tracker</h1>
+      <button id="logout-btn" style="display: none">Logout</button>
+    </header>
 
-    <div class="header-controls">
-      <label>
-        <input type="checkbox" id="viewToggle" /> Show My Stats Only
-      </label>
-      <span style="flex-grow: 1"></span>
-      <!-- Req #2 & #3 -->
-      <button class="btn" onclick="exportData()">Export My Data</button>
-      <button
-        class="btn"
-        onclick="document.getElementById('importFile').click()"
-      >
-        Import Data
-      </button>
-      <input
-        type="file"
-        id="importFile"
-        class="hidden"
-        accept=".json"
-        onchange="importData(this)"
-      />
-    </div>
+    <!-- Auth Section -->
+    <div id="auth-section">
+      <div class="auth-card">
+        <h2 id="auth-title">Login</h2>
+        <p id="auth-message"></p>
 
-    <!-- Create Section -->
-    <div class="card">
-      <h3>Add New Event</h3>
-      <select id="gameSelect"></select>
-      <input type="text" id="newGameName" placeholder="Or New Game Name" />
-      <br /><br />
-      <input
-        type="text"
-        id="eventName"
-        placeholder="Event Name (e.g. Drop X)"
-      />
-      <!-- Req #1: Placeholder changed to indicate % -->
-      <input
-        type="number"
-        id="eventProb"
-        placeholder="Probability % (e.g. 25)"
-        step="0.1"
-      />
-      <br /><br />
-      <div id="outcomesList">
-        <div>
-          <input type="text" placeholder="Outcome Name" class="outcome-name" />
-          <label
-            ><input type="checkbox" class="outcome-success" /> Is
-            Success?</label
-          >
-        </div>
-        <div>
-          <input type="text" placeholder="Outcome Name" class="outcome-name" />
-          <label
-            ><input type="checkbox" class="outcome-success" /> Is
-            Success?</label
-          >
-        </div>
+        <form id="login-form">
+          <input
+            type="text"
+            name="username"
+            placeholder="Username"
+            required
+            autocomplete="username"
+          />
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            required
+            autocomplete="current-password"
+          />
+          <button type="submit">Login</button>
+        </form>
+
+        <form id="register-form" style="display: none">
+          <input
+            type="text"
+            name="username"
+            placeholder="Choose Username"
+            required
+            autocomplete="username"
+          />
+          <input
+            type="password"
+            name="password"
+            placeholder="Choose Password"
+            required
+            autocomplete="new-password"
+          />
+          <button type="submit">Register</button>
+        </form>
+
+        <p style="margin-top: 1.5rem">
+          <button class="link-btn" id="toggle-auth-mode">
+            Need an account? Register
+          </button>
+        </p>
       </div>
-      <button class="btn" onclick="addOutcomeField()">+ Outcome</button>
-      <br /><br />
-      <button class="btn btn-primary" onclick="createEvent()">
-        Create Event
-      </button>
     </div>
 
-    <!-- Tracker Section -->
-    <div id="trackerContainer"></div>
+    <!-- Dashboard Section -->
+    <div id="dashboard-section" class="container" style="display: none">
+      <!-- Games List -->
+      <div id="games-list" class="section-block">
+        <h3>Loading Games...</h3>
+      </div>
+
+      <!-- Events List -->
+      <div id="events-list" class="section-block">
+        <p style="color: #888">Select a game above to view events.</p>
+      </div>
+
+      <!-- Stats Area -->
+      <div id="stats" class="section-block">
+        <!-- Dynamic Stats and Logging buttons appear here via script.js -->
+      </div>
+    </div>
+
+    <div id="log-message" class="feedback"></div>
 
     <script src="script.js"></script>
   </body>

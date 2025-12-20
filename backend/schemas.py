@@ -1,10 +1,33 @@
+from typing import List, Optional, Dict
 from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+
+# --- Auth Schemas ---
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class UserBase(BaseModel):
+    username: str
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: int
+    
+    class Config:
+        orm_mode = True
+
+# --- Application Schemas ---
 
 class OutcomeBase(BaseModel):
     name: str
-    is_success: bool
+    probability: float
 
 class OutcomeCreate(OutcomeBase):
     pass
@@ -18,7 +41,6 @@ class Outcome(OutcomeBase):
 
 class EventBase(BaseModel):
     name: str
-    probability: float
 
 class EventCreate(EventBase):
     outcomes: List[OutcomeCreate]
@@ -33,7 +55,6 @@ class Event(EventBase):
 
 class GameBase(BaseModel):
     name: str
-    image_url: Optional[str] = None
 
 class GameCreate(GameBase):
     pass
@@ -46,19 +67,30 @@ class Game(GameBase):
         orm_mode = True
 
 class LogBase(BaseModel):
-    event_id: int
-    outcome_id: int
-    user_id: str
+    outcome_name: str
 
 class LogCreate(LogBase):
-    # Added for Bulk Add (#7) and Import (#4)
-    count: Optional[int] = 1 
-    is_imported: Optional[bool] = False
+    # We no longer ask for user_id here; we get it from the token
+    pass
 
 class Log(LogBase):
     id: int
+    event_id: int
+    user_id: int
     timestamp: datetime
-    is_imported: bool
 
     class Config:
         orm_mode = True
+
+class StatsResponse(BaseModel):
+    # Global Stats
+    total_attempts: int
+    outcomes: Dict[str, int]
+    actual_rates: Dict[str, float]
+    expected_rates: Dict[str, float]
+    deviation: Dict[str, float]
+    
+    # User Specific Stats (Optional, populated if user is logged in)
+    user_total_attempts: Optional[int] = 0
+    user_outcomes: Optional[Dict[str, int]] = {}
+    user_actual_rates: Optional[Dict[str, float]] = {}

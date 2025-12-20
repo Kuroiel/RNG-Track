@@ -8,3 +8,6 @@ pytest
 httpx
 pytest-mock
 pytest-playwright
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
