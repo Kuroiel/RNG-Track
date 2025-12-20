@@ -1,330 +1,312 @@
-/* --- Core Defaults --- */
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  background-color: #121212;
-  color: #e0e0e0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-height: 100vh;
+:root {
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --bg-color: #f8fafc;
+  --card-bg: #ffffff;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --danger: #ef4444;
+  --success: #22c55e;
 }
 
+body {
+  font-family: "Inter", sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+}
+
+/* Header */
 header {
-  width: 100%;
-  background-color: #1e1e1e;
-  border-bottom: 1px solid #333;
-  padding: 15px 20px;
-  box-sizing: border-box;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.header-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
 }
 
 h1 {
-  color: #bb86fc;
   margin: 0;
   font-size: 1.5rem;
+  color: var(--primary);
+  font-weight: 700;
 }
 
-h2,
-h3,
-h4 {
-  margin-top: 0;
-  color: #fff;
-}
-
-.container {
-  width: 100%;
-  max-width: 800px;
-  padding: 0 20px;
-  box-sizing: border-box;
-}
-
-/* --- Cards & Blocks --- */
-.section-block {
-  background-color: #1e1e1e;
-  border-radius: 8px;
-  padding: 20px;
-  border: 1px solid #333;
-  margin-bottom: 20px;
-}
-
-.card {
-  background-color: #2c2c2c;
-  border-radius: 8px;
-  padding: 15px;
-  border: 1px solid #444;
+.nav-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: white;
   cursor: pointer;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: all 0.2s;
+}
+
+.nav-btn.primary-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+}
+
+.nav-btn:hover {
+  opacity: 0.9;
+}
+
+/* Hero Section */
+.hero-section {
   text-align: center;
-  transition: transform 0.2s, border-color 0.2s;
-  font-weight: bold;
-  color: #e0e0e0;
+  padding: 4rem 1rem;
+}
+
+.hero-section h2 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-main);
+}
+
+.hero-section p {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+}
+
+.search-container {
   display: flex;
+  justify-content: center;
+  gap: 10px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+#game-search {
+  flex: 1;
+  padding: 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+#search-btn {
+  padding: 0 2rem;
+  font-size: 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   align-items: center;
   justify-content: center;
-  min-height: 60px;
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  border-color: #bb86fc;
-  color: #bb86fc;
+/* Modal Card */
+.modal-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  position: relative;
+  animation: slideUp 0.3s ease-out;
 }
 
-/* --- Grids --- */
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 15px;
-  margin-top: 15px;
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
-/* --- Forms & Inputs --- */
-input,
-select {
+.close-modal-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modal-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--text-main);
+}
+.modal-header p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-main);
+}
+
+.form-group input {
   width: 100%;
-  padding: 12px;
-  margin-bottom: 15px;
-  border-radius: 4px;
-  border: 1px solid #555;
-  background-color: #333;
-  color: #e0e0e0;
-  font-size: 16px;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
   box-sizing: border-box;
 }
 
-input:focus {
-  border-color: #bb86fc;
-  outline: none;
-}
-
-/* --- Buttons --- */
-button {
+.full-width-btn {
   width: 100%;
-  padding: 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  background-color: #bb86fc;
-  color: #121212;
-  font-weight: bold;
+  padding: 0.75rem;
+  background: var(--primary);
+  color: white;
   border: none;
-  font-size: 16px;
-  transition: background-color 0.2s;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 1rem;
 }
 
-button:hover {
-  background-color: #a76ff0;
-}
-
-.secondary-btn {
-  background-color: #444;
-  color: #e0e0e0;
-  margin-bottom: 10px;
-}
-.secondary-btn:hover {
-  background-color: #555;
+.modal-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
 }
 
 .link-btn {
   background: none;
   border: none;
-  color: #bb86fc;
-  text-decoration: underline;
-  width: auto;
-  padding: 0;
-  font-size: 0.9rem;
+  color: var(--primary);
+  font-weight: 600;
   cursor: pointer;
-}
-.link-btn:hover {
-  background: none;
-  color: #a76ff0;
+  padding: 0;
+  text-decoration: underline;
 }
 
-.guest-btn {
-  background: none;
-  border: 1px solid #555;
-  color: #aaa;
-  margin-top: 10px;
-}
-.guest-btn:hover {
-  border-color: #bb86fc;
-  color: #bb86fc;
-  background: none;
-}
-
-#auth-btn {
-  width: auto;
-  background-color: #2c2c2c;
-  color: #fff;
-  padding: 8px 16px;
-  font-size: 14px;
-  border: 1px solid #444;
-}
-#auth-btn:hover {
-  background-color: #333;
-}
-
-/* --- Auth Specific --- */
-#auth-section {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-grow: 1;
-  width: 100%;
-  padding: 20px 0;
-}
-
-.auth-card {
-  background-color: #1e1e1e;
-  padding: 2.5rem;
-  border-radius: 8px;
-  border: 1px solid #333;
-  width: 100%;
-  max-width: 350px; /* Slightly nicer width */
+.error-text {
+  color: var(--danger);
   text-align: center;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  font-size: 0.9rem;
 }
 
-.auth-card form {
-  display: flex;
-  flex-direction: column;
-  gap: 0; /* Handled by input margins */
+/* Dashboard Cards */
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
-/* Bot Protection */
-.hidden-bot {
-  display: none;
-  visibility: hidden;
-  position: absolute;
-  left: -9999px;
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
 }
 
-/* --- Create Sections --- */
-.create-section {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px dashed #444;
+.card {
+  background: white;
+  border: 1px solid var(--border-color);
+  padding: 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.outcome-row {
-  display: flex;
-  gap: 10px;
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
-/* --- Logging & Stats --- */
-.action-card {
-  background-color: #3700b3;
-  color: #fff;
-  border: none;
-}
-.action-card:hover {
-  background-color: #6200ee;
-}
-
-.bulk-log {
-  margin-top: 20px;
-  background: #252525;
-  padding: 15px;
-  border-radius: 6px;
-}
-
-/* --- Stats Table --- */
+/* Stats Table */
 .stats-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
-  font-size: 0.95rem;
+  margin-top: 1rem;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .stats-table th,
 .stats-table td {
-  padding: 10px;
+  padding: 1rem;
   text-align: left;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .stats-table th {
-  color: #aaa;
-  font-weight: normal;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  background: #f1f5f9;
+  font-weight: 600;
 }
 
-.stats-table td {
-  color: #e0e0e0;
-}
-
-.user-stats th {
-  color: #bb86fc;
-}
-
-/* --- Feedback Toast --- */
+/* Utility */
 .feedback {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background: #333;
-  color: #bb86fc;
-  padding: 12px 24px;
-  border-radius: 4px;
-  border: 1px solid #bb86fc;
+  background: var(--text-main);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 8px;
   opacity: 0;
   transition: opacity 0.3s;
-  z-index: 1000;
-  font-weight: bold;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-}
-/* Modal Styles */
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  background-color: rgba(0, 0, 0, 0.5);
-  align-items: center;
-  justify-content: center;
 }
 
-.modal-content {
-  background-color: #fff;
-  padding: 30px;
+.bulk-log {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #f1f5f9;
   border-radius: 8px;
-  width: 90%;
-  max-width: 400px;
-  position: relative;
-  text-align: center;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  margin: 15% auto; /* Fallback for flex centering */
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
-/* Flex centering for modal */
-.modal {
-  display: none;
-  display: flex; /* Overwrites display none if toggled via JS flex */
-}
-
-.close-modal {
-  color: #aaa;
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  font-size: 28px;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-.close-modal:hover,
-.close-modal:focus {
-  color: black;
-  text-decoration: none;
+button {
   cursor: pointer;
 }

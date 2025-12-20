@@ -1,10 +1,10 @@
 import os
-import httpx # Already in your requirements.txt
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import timedelta, datetime
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,12 +12,11 @@ from passlib.context import CryptContext
 from . import models, schemas, database
 
 # --- Configuration ---
-# SECURITY: Load from env, fallback only for local dev (unsafe for prod)
 SECRET_KEY = os.getenv("SECRET_KEY", "UNSAFE_DEFAULT_KEY_CHANGE_ON_PROD")
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY") 
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -45,7 +44,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def verify_recaptcha(token: str):
     if not RECAPTCHA_SECRET_KEY:
-        # If no key configured, skip verification
         return True
         
     async with httpx.AsyncClient() as client:
@@ -57,7 +55,7 @@ async def verify_recaptcha(token: str):
             }
         )
         result = response.json()
-        
+        # v3 Logic: Check success AND score (0.5 threshold)
         return result.get("success", False) and result.get("score", 0.0) >= 0.5
 
 # --- Dependencies ---
@@ -91,17 +89,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 
 @app.post("/register", response_model=schemas.Token)
 async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # 1. Verify Captcha
     is_valid_captcha = await verify_recaptcha(user.captcha_token)
     if not is_valid_captcha:
-        raise HTTPException(status_code=400, detail="Invalid reCAPTCHA. Please try again.")
+        raise HTTPException(status_code=400, detail="reCAPTCHA failed. Potential bot detected.")
 
-    # 2. Check existing user
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     
-    # 3. Create User
     hashed_password = get_password_hash(user.password)
     new_user = models.User(username=user.username, hashed_password=hashed_password)
     db.add(new_user)
@@ -137,8 +132,19 @@ def create_game(game: schemas.GameCreate, db: Session = Depends(get_db), current
     return db_game
 
 @app.get("/games/", response_model=List[schemas.Game])
-def read_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return db.query(models.Game).offset(skip).limit(limit).all()
+def read_games(
+    skip: int = 0, 
+    limit: int = 100, 
+    search: Optional[str] = None, 
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Game)
+    if search:
+        # ILIKE is Postgres specific, usually maps to LIKE in SQLite but case-insensitive
+        # For cross-DB compatibility in simple apps, this is usually fine.
+        query = query.filter(models.Game.name.ilike(f"%{search}%"))
+    
+    return query.offset(skip).limit(limit).all()
 
 @app.post("/events/", response_model=schemas.Event)
 def create_event(event: schemas.EventCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -163,12 +169,10 @@ def read_events(game_id: int, db: Session = Depends(get_db)):
 
 @app.post("/logs/", response_model=schemas.Log)
 def create_log(log: schemas.LogCreate, event_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # 1. Validate Event existence
     event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    # 2. Validate Outcome exists in this event (Bug Fix)
     valid_outcomes = [o.name for o in event.outcomes]
     if log.outcome_name not in valid_outcomes:
         raise HTTPException(status_code=400, detail=f"Invalid outcome. Must be one of: {valid_outcomes}")
@@ -181,8 +185,7 @@ def create_log(log: schemas.LogCreate, event_id: int, db: Session = Depends(get_
 
 @app.post("/logs/bulk", status_code=201)
 def create_bulk_logs(bulk_data: schemas.BulkLogCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # Optimization: Create many logs in one transaction
-    if bulk_data.count > 1000: # Backend enforce limit
+    if bulk_data.count > 1000:
         raise HTTPException(status_code=400, detail="Batch size limit exceeded (max 1000)")
 
     event = db.query(models.Event).filter(models.Event.id == bulk_data.event_id).first()
@@ -211,14 +214,12 @@ def create_bulk_logs(bulk_data: schemas.BulkLogCreate, db: Session = Depends(get
 
 @app.get("/stats/{event_id}", response_model=schemas.StatsResponse)
 def read_stats(event_id: int, token: Optional[str] = None, db: Session = Depends(get_db)):
-    # 1. Get Event and defined Outcomes
     event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
     defined_outcomes = {o.name: o.probability for o in event.outcomes}
     
-    # 2. Get Global Counts
     global_counts_query = db.query(
         models.Log.outcome_name, func.count(models.Log.id)
     ).filter(models.Log.event_id == event_id).group_by(models.Log.outcome_name).all()
@@ -226,7 +227,6 @@ def read_stats(event_id: int, token: Optional[str] = None, db: Session = Depends
     global_counts = {name: count for name, count in global_counts_query}
     total_attempts = sum(global_counts.values())
 
-    # 3. Calculate Global Stats
     actual_rates = {}
     expected_rates = {}
     deviation = {}
@@ -238,7 +238,6 @@ def read_stats(event_id: int, token: Optional[str] = None, db: Session = Depends
         expected_rates[name] = prob
         deviation[name] = rate - prob
 
-    # 4. Get User Stats (if logged in)
     user_counts = {}
     user_total = 0
     user_actual_rates = {}
