@@ -5,21 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
     <link rel="stylesheet" href="style.css" />
-    <!-- Google reCAPTCHA -->
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <!-- Google reCAPTCHA v3: REPLACE 'YOUR_GOOGLE_SITE_KEY_HERE' IN THE URL BELOW -->
+    <script src="https://www.google.com/recaptcha/api.js?render=6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc"></script>
   </head>
   <body>
     <header>
       <h1>RNG Tracker</h1>
-      <button id="logout-btn" style="display: none">Logout</button>
+      <div id="header-controls">
+        <!-- These toggle based on login state -->
+        <span
+          id="user-display"
+          style="display: none; margin-right: 15px; font-weight: bold"
+        ></span>
+        <button id="logout-btn" style="display: none">Logout</button>
+        <button id="login-btn-nav" class="secondary-btn">
+          Login / Register
+        </button>
+      </div>
     </header>
 
-    <!-- Auth Section -->
-    <div id="auth-section">
-      <div class="auth-card">
+    <!-- Auth Modal (Hidden by default) -->
+    <div id="auth-modal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span class="close-modal">&times;</span>
+
         <h2 id="auth-title">Login</h2>
         <p id="auth-message"></p>
 
+        <!-- Login Form -->
         <form id="login-form">
           <input
             type="text"
@@ -38,6 +51,7 @@
           <button type="submit">Login</button>
         </form>
 
+        <!-- Register Form -->
         <form id="register-form" style="display: none">
           <input
             type="text"
@@ -53,15 +67,6 @@
             required
             autocomplete="new-password"
           />
-
-          <!-- Captcha Widget -->
-          <!-- REPLACE 'YOUR_GOOGLE_SITE_KEY_HERE' WITH YOUR ACTUAL SITE KEY -->
-          <div
-            class="g-recaptcha"
-            data-sitekey="6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc"
-            style="margin-bottom: 15px; display: flex; justify-content: center"
-          ></div>
-
           <button type="submit">Register</button>
         </form>
 
@@ -73,8 +78,8 @@
       </div>
     </div>
 
-    <!-- Dashboard Section -->
-    <div id="dashboard-section" class="container" style="display: none">
+    <!-- Dashboard Section (Always Visible) -->
+    <div id="dashboard-section" class="container">
       <!-- Games List -->
       <div id="games-list" class="section-block">
         <h3>Loading Games...</h3>

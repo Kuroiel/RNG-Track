@@ -45,7 +45,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def verify_recaptcha(token: str):
     if not RECAPTCHA_SECRET_KEY:
-        # If no key configured, skip verification (or fail, depending on preference)
+        # If no key configured, skip verification
         return True
         
     async with httpx.AsyncClient() as client:
@@ -57,7 +57,8 @@ async def verify_recaptcha(token: str):
             }
         )
         result = response.json()
-        return result.get("success", False)
+        
+        return result.get("success", False) and result.get("score", 0.0) >= 0.5
 
 # --- Dependencies ---
 def get_db():
