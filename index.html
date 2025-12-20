@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
     <link rel="stylesheet" href="style.css" />
+    <!-- Google reCAPTCHA -->
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   </head>
   <body>
     <header>
@@ -51,6 +53,15 @@
             required
             autocomplete="new-password"
           />
+
+          <!-- Captcha Widget -->
+          <!-- REPLACE 'YOUR_GOOGLE_SITE_KEY_HERE' WITH YOUR ACTUAL SITE KEY -->
+          <div
+            class="g-recaptcha"
+            data-sitekey="6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc"
+            style="margin-bottom: 15px; display: flex; justify-content: center"
+          ></div>
+
           <button type="submit">Register</button>
         </form>
 

@@ -16,6 +16,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    captcha_token: str  # Added for reCAPTCHA
 
 class User(UserBase):
     id: int
@@ -43,6 +44,8 @@ class EventBase(BaseModel):
     name: str
 
 class EventCreate(EventBase):
+    # Pass game_id explicitly or handle in URL logic
+    game_id: int 
     outcomes: List[OutcomeCreate]
 
 class Event(EventBase):
@@ -70,8 +73,13 @@ class LogBase(BaseModel):
     outcome_name: str
 
 class LogCreate(LogBase):
-    # We no longer ask for user_id here; we get it from the token
     pass
+
+# Optimized Bulk Schema
+class BulkLogCreate(BaseModel):
+    event_id: int
+    outcome_name: str
+    count: int
 
 class Log(LogBase):
     id: int

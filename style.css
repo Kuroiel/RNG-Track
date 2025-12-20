@@ -137,21 +137,35 @@ button:hover {
   width: auto;
   padding: 0;
   font-size: 0.9rem;
+  cursor: pointer;
 }
 .link-btn:hover {
   background: none;
   color: #a76ff0;
 }
 
-#logout-btn {
+.guest-btn {
+  background: none;
+  border: 1px solid #555;
+  color: #aaa;
+  margin-top: 10px;
+}
+.guest-btn:hover {
+  border-color: #bb86fc;
+  color: #bb86fc;
+  background: none;
+}
+
+#auth-btn {
   width: auto;
-  background-color: #cf6679; /* Red/Pink error color for logout */
-  color: #121212;
+  background-color: #2c2c2c;
+  color: #fff;
   padding: 8px 16px;
   font-size: 14px;
+  border: 1px solid #444;
 }
-#logout-btn:hover {
-  background-color: #ff7b93;
+#auth-btn:hover {
+  background-color: #333;
 }
 
 /* --- Auth Specific --- */
@@ -161,16 +175,32 @@ button:hover {
   align-items: center;
   flex-grow: 1;
   width: 100%;
+  padding: 20px 0;
 }
 
 .auth-card {
   background-color: #1e1e1e;
-  padding: 2rem;
+  padding: 2.5rem;
   border-radius: 8px;
   border: 1px solid #333;
   width: 100%;
-  max-width: 400px;
+  max-width: 350px; /* Slightly nicer width */
   text-align: center;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0; /* Handled by input margins */
+}
+
+/* Bot Protection */
+.hidden-bot {
+  display: none;
+  visibility: hidden;
+  position: absolute;
+  left: -9999px;
 }
 
 /* --- Create Sections --- */
@@ -187,7 +217,7 @@ button:hover {
 
 /* --- Logging & Stats --- */
 .action-card {
-  background-color: #3700b3; /* Darker Purple */
+  background-color: #3700b3;
   color: #fff;
   border: none;
 }
@@ -230,7 +260,7 @@ button:hover {
 }
 
 .user-stats th {
-  color: #bb86fc; /* Highlight My Stats headers */
+  color: #bb86fc;
 }
 
 /* --- Feedback Toast --- */

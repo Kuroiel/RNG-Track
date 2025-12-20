@@ -21,7 +21,6 @@ const logoutBtn = document.getElementById("logout-btn");
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   if (token) {
-    // Ideally verify token validity here, for now assume valid
     showDashboard();
     loadGames();
   } else {
@@ -84,29 +83,46 @@ loginForm.addEventListener("submit", async (e) => {
     localStorage.setItem("token", token);
     showDashboard();
     loadGames();
+    authMessage.innerText = "";
   } catch (err) {
     authMessage.style.color = "red";
     authMessage.innerText = err.message;
   }
 });
 
-// Handle Register
+// Handle Register (With Captcha)
 registerForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const username = registerForm.username.value;
   const password = registerForm.password.value;
 
+  // Get Captcha Response
+  const captchaToken = grecaptcha.getResponse();
+
+  if (!captchaToken) {
+    authMessage.style.color = "red";
+    authMessage.innerText = "Please complete the captcha.";
+    return;
+  }
+
   try {
     const response = await fetch(`${API_URL}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({
+        username,
+        password,
+        captcha_token: captchaToken,
+      }),
     });
 
     if (!response.ok) {
       const errData = await response.json();
       throw new Error(errData.detail || "Registration failed");
     }
+
+    // Reset Captcha
+    grecaptcha.reset();
 
     // Auto login after register
     const loginData = new FormData();
@@ -123,9 +139,11 @@ registerForm.addEventListener("submit", async (e) => {
     localStorage.setItem("token", token);
     showDashboard();
     loadGames();
+    authMessage.innerText = "";
   } catch (err) {
     authMessage.style.color = "red";
     authMessage.innerText = err.message;
+    grecaptcha.reset(); // Reset on failure too
   }
 });
 
@@ -155,12 +173,17 @@ async function loadGames() {
     const createDiv = document.createElement("div");
     createDiv.className = "create-section";
     createDiv.innerHTML = `
-            <input type="text" id="new-game-name" placeholder="New Game Name">
-            <button onclick="createGame()">Add Game</button>
-        `;
+      <input type="text" id="new-game-name" placeholder="New Game Name">
+      <button onclick="createGame()">Add Game</button>
+    `;
     gamesList.appendChild(createDiv);
   } catch (err) {
     console.error("Failed to load games", err);
+    // If token invalid, logout
+    if (err.status === 401) {
+      localStorage.removeItem("token");
+      location.reload();
+    }
   }
 }
 
@@ -206,17 +229,17 @@ async function loadEvents(gameId) {
   const createDiv = document.createElement("div");
   createDiv.className = "create-section";
   createDiv.innerHTML = `
-        <h4>Create New Event</h4>
-        <input type="text" id="new-event-name" placeholder="Event Name">
-        <div id="outcomes-inputs">
-            <div class="outcome-row">
-                <input type="text" placeholder="Outcome (e.g. Win)" class="out-name">
-                <input type="number" placeholder="Prob % (e.g. 50)" class="out-prob">
-            </div>
-        </div>
-        <button onclick="addOutcomeRow()" class="secondary-btn">+ Outcome</button>
-        <button onclick="createEvent(${gameId})">Save Event</button>
-    `;
+    <h4>Create New Event</h4>
+    <input type="text" id="new-event-name" placeholder="Event Name">
+    <div id="outcomes-inputs">
+      <div class="outcome-row">
+        <input type="text" placeholder="Outcome (e.g. Win)" class="out-name">
+        <input type="number" placeholder="Prob % (e.g. 50)" class="out-prob">
+      </div>
+    </div>
+    <button onclick="addOutcomeRow()" class="secondary-btn">+ Outcome</button>
+    <button onclick="createEvent(${gameId})">Save Event</button>
+  `;
   eventsList.appendChild(createDiv);
 }
 
@@ -224,9 +247,9 @@ function addOutcomeRow() {
   const div = document.createElement("div");
   div.className = "outcome-row";
   div.innerHTML = `
-        <input type="text" placeholder="Outcome" class="out-name">
-        <input type="number" placeholder="Prob %" class="out-prob">
-    `;
+    <input type="text" placeholder="Outcome" class="out-name">
+    <input type="number" placeholder="Prob %" class="out-prob">
+  `;
   document.getElementById("outcomes-inputs").appendChild(div);
 }
 
@@ -275,63 +298,82 @@ async function loadEventDetails(event) {
 
   // Bulk Log
   html += `
-        <div class="bulk-log">
-            <h4>Bulk Log</h4>
-            <select id="bulk-outcome">
-                ${event.outcomes
-                  .map((o) => `<option value="${o.name}">${o.name}</option>`)
-                  .join("")}
-            </select>
-            <input type="number" id="bulk-count" value="10" min="1">
-            <button onclick="bulkLog()">Submit Bulk</button>
-        </div>
-    `;
+    <div class="bulk-log">
+      <h4>Bulk Log</h4>
+      <select id="bulk-outcome">
+        ${event.outcomes
+          .map((o) => `<option value="${o.name}">${o.name}</option>`)
+          .join("")}
+      </select>
+      <input type="number" id="bulk-count" value="10" min="1" max="1000">
+      <button onclick="bulkLog()">Submit Bulk</button>
+    </div>
+  `;
 
   statsDiv.innerHTML = html;
   loadStats(event.id);
 }
 
 async function logOutcome(outcomeName, eventName) {
-  await fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ outcome_name: outcomeName }),
-  });
+  try {
+    const res = await fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ outcome_name: outcomeName }),
+    });
 
-  showFeedback(`Logged: ${outcomeName}`);
-  loadStats(currentEventId);
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail);
+      return;
+    }
+
+    showFeedback(`Logged: ${outcomeName}`);
+    loadStats(currentEventId);
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 async function bulkLog() {
   const outcomeName = document.getElementById("bulk-outcome").value;
   const count = parseInt(document.getElementById("bulk-count").value);
 
-  if (count > 100) {
-    alert("Max 100 at a time");
+  if (count > 1000 || count < 1) {
+    alert("Please enter a value between 1 and 1000");
     return;
   }
 
-  // Parallel requests (could be optimized on backend to accept arrays, but this works for now)
-  const promises = [];
-  for (let i = 0; i < count; i++) {
-    promises.push(
-      fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ outcome_name: outcomeName }),
-      })
-    );
-  }
+  // Optimized: Single Request
+  try {
+    const res = await fetch(`${API_URL}/logs/bulk`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        event_id: currentEventId,
+        outcome_name: outcomeName,
+        count: count,
+      }),
+    });
 
-  await Promise.all(promises);
-  showFeedback(`Logged ${count}x ${outcomeName}`);
-  loadStats(currentEventId);
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail);
+      return;
+    }
+
+    showFeedback(`Logged ${count}x ${outcomeName}`);
+    loadStats(currentEventId);
+  } catch (e) {
+    console.error(e);
+    alert("Bulk log failed");
+  }
 }
 
 function showFeedback(msg) {
@@ -352,16 +394,16 @@ async function loadStats(eventId) {
 
   // Global Stats Table
   let html = `
-        <h4>Global Statistics (Total: ${data.total_attempts})</h4>
-        <table class="stats-table">
-            <tr>
-                <th>Outcome</th>
-                <th>Count</th>
-                <th>Actual %</th>
-                <th>Expected %</th>
-                <th>Deviation</th>
-            </tr>
-    `;
+    <h4>Global Statistics (Total: ${data.total_attempts})</h4>
+    <table class="stats-table">
+      <tr>
+        <th>Outcome</th>
+        <th>Count</th>
+        <th>Actual %</th>
+        <th>Expected %</th>
+        <th>Deviation</th>
+      </tr>
+  `;
 
   for (const [outcome, count] of Object.entries(data.outcomes)) {
     const actual = data.actual_rates[outcome].toFixed(2);
@@ -371,38 +413,38 @@ async function loadStats(eventId) {
       Math.abs(dev) > 5 ? "red" : Math.abs(dev) < 1 ? "green" : "black";
 
     html += `
-            <tr>
-                <td>${outcome}</td>
-                <td>${count}</td>
-                <td>${actual}%</td>
-                <td>${expected}%</td>
-                <td style="color:${color}">${dev > 0 ? "+" : ""}${dev}%</td>
-            </tr>
-        `;
+      <tr>
+        <td>${outcome}</td>
+        <td>${count}</td>
+        <td>${actual}%</td>
+        <td>${expected}%</td>
+        <td style="color:${color}">${dev > 0 ? "+" : ""}${dev}%</td>
+      </tr>
+    `;
   }
   html += `</table>`;
 
   // User Stats Table
   if (data.user_total_attempts > 0) {
     html += `
-            <h4 style="margin-top:20px; color:#007bff">My Statistics (Total: ${data.user_total_attempts})</h4>
-            <table class="stats-table user-stats">
-                <tr>
-                    <th>Outcome</th>
-                    <th>My Count</th>
-                    <th>My Rate %</th>
-                </tr>
-        `;
+      <h4 style="margin-top:20px; color:#007bff">My Statistics (Total: ${data.user_total_attempts})</h4>
+      <table class="stats-table user-stats">
+        <tr>
+          <th>Outcome</th>
+          <th>My Count</th>
+          <th>My Rate %</th>
+        </tr>
+    `;
 
     for (const [outcome, count] of Object.entries(data.user_outcomes)) {
       const actual = data.user_actual_rates[outcome].toFixed(2);
       html += `
-                <tr>
-                    <td>${outcome}</td>
-                    <td>${count}</td>
-                    <td>${actual}%</td>
-                </tr>
-            `;
+        <tr>
+          <td>${outcome}</td>
+          <td>${count}</td>
+          <td>${actual}%</td>
+        </tr>
+      `;
     }
     html += `</table>`;
   } else {
