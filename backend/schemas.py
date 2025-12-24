@@ -1,104 +1,113 @@
-from typing import List, Optional, Dict
-from pydantic import BaseModel
-from datetime import datetime
+from pydantic import BaseModel, EmailStr, validator
+from typing import Optional, List
+import re
+
+# --- Shared Properties ---
+class UserBase(BaseModel):
+    email: EmailStr
 
 # --- Auth Schemas ---
+class UserCreate(UserBase):
+    password: str
+
+    @validator('password')
+    def validate_password(cls, v):
+        """
+        Enforce password complexity:
+        - At least 8 chars
+        - At least one uppercase
+        - At least one lowercase
+        - At least one digit
+        """
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r"[A-Z]", v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r"[a-z]", v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r"\d", v):
+            raise ValueError('Password must contain at least one number')
+        return v
+
+class UserLogin(UserBase):
+    password: str
+    recaptcha_token: str 
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 class TokenData(BaseModel):
-    username: Optional[str] = None
+    email: Optional[str] = None
 
-class UserBase(BaseModel):
-    username: str
+# --- Password Reset Schemas ---
+class ForgotPassword(BaseModel):
+    email: EmailStr
 
-class UserCreate(UserBase):
-    password: str
-    captcha_token: str  # Added for reCAPTCHA
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str
 
-class User(UserBase):
-    id: int
-    
-    class Config:
-        orm_mode = True
+    @validator('new_password')
+    def validate_password(cls, v):
+        # Re-use logic or call a shared helper
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r"[A-Z]", v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r"[a-z]", v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r"\d", v):
+            raise ValueError('Password must contain at least one number')
+        return v
 
-# --- Application Schemas ---
-
+# --- Data Schemas ---
 class OutcomeBase(BaseModel):
     name: str
-    probability: float
-
-class OutcomeCreate(OutcomeBase):
-    pass
+    expected_rate: float
 
 class Outcome(OutcomeBase):
     id: int
-    event_id: int
-
     class Config:
         orm_mode = True
 
 class EventBase(BaseModel):
     name: str
 
-class EventCreate(EventBase):
-    # Pass game_id explicitly or handle in URL logic
-    game_id: int 
-    outcomes: List[OutcomeCreate]
-
 class Event(EventBase):
     id: int
     game_id: int
     outcomes: List[Outcome] = []
-
     class Config:
         orm_mode = True
 
 class GameBase(BaseModel):
     name: str
-
-class GameCreate(GameBase):
-    pass
+    icon_url: Optional[str] = None
 
 class Game(GameBase):
     id: int
     events: List[Event] = []
-
     class Config:
         orm_mode = True
 
 class LogBase(BaseModel):
-    outcome_name: str
+    event_id: int
+    result: bool
 
 class LogCreate(LogBase):
     pass
 
-# Optimized Bulk Schema
-class BulkLogCreate(BaseModel):
-    event_id: int
-    outcome_name: str
-    count: int
-
 class Log(LogBase):
     id: int
-    event_id: int
     user_id: int
-    timestamp: datetime
-
     class Config:
         orm_mode = True
 
-class StatsResponse(BaseModel):
-    # Global Stats
+class Stats(BaseModel):
+    event_name: str
     total_attempts: int
-    outcomes: Dict[str, int]
-    actual_rates: Dict[str, float]
-    expected_rates: Dict[str, float]
-    deviation: Dict[str, float]
-    
-    # User Specific Stats (Optional, populated if user is logged in)
-    user_total_attempts: Optional[int] = 0
-    user_outcomes: Optional[Dict[str, int]] = {}
-    user_actual_rates: Optional[Dict[str, float]] = {}
+    success_count: int
+    actual_rate: float
+    expected_rate: float
+    deviation: float

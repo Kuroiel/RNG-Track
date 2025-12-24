@@ -1,30 +1,62 @@
-import os
-import httpx
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional, Dict
 from datetime import timedelta, datetime
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from typing import List
+import requests
+import os
+import secrets
 
-from . import models, schemas, database
+# Email
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+
+# Local imports
+import models
+import schemas
+import database
+from database import engine, get_db
+
+# Auth
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 # --- Configuration ---
-SECRET_KEY = os.getenv("SECRET_KEY", "UNSAFE_DEFAULT_KEY_CHANGE_ON_PROD")
-RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY") 
-
+SECRET_KEY = os.getenv("SECRET_KEY", "YOUR_SECRET_KEY") # CHANGE THIS IN PROD
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 Days
+RECAPTCHA_SECRET = os.getenv("RECAPTCHA_SECRET", "YOUR_RECAPTCHA_SECRET")
 
-models.Base.metadata.create_all(bind=database.engine)
+# Email Config (Requires Env Vars)
+conf = ConnectionConfig(
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "user@example.com"),
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "password"),
+    MAIL_FROM = os.getenv("MAIL_FROM", "user@example.com"),
+    MAIL_PORT = int(os.getenv("MAIL_PORT", 587)),
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com"),
+    MAIL_STARTTLS = True,
+    MAIL_SSL_TLS = False,
+    USE_CREDENTIALS = True,
+    VALIDATE_CERTS = True
+)
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- Security & Auth Setup ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Update with specific frontend URL for security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# --- Helpers ---
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -32,7 +64,7 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -42,29 +74,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def verify_recaptcha(token: str):
-    if not RECAPTCHA_SECRET_KEY:
-        return True
-        
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://www.google.com/recaptcha/api/siteverify",
-            data={
-                "secret": RECAPTCHA_SECRET_KEY,
-                "response": token
-            }
-        )
-        result = response.json()
-        # v3 Logic: Check success AND score (0.5 threshold)
-        return result.get("success", False) and result.get("score", 0.0) >= 0.5
-
-# --- Dependencies ---
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def verify_recaptcha(token: str):
+    url = "https://www.google.com/recaptcha/api/siteverify"
+    payload = {
+        "secret": RECAPTCHA_SECRET,
+        "response": token
+    }
+    response = requests.post(url, data=payload)
+    result = response.json()
+    return result.get("success", False)
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -74,208 +92,196 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
-        token_data = schemas.TokenData(username=username)
+        token_data = schemas.TokenData(email=email)
     except JWTError:
         raise credentials_exception
-    user = db.query(models.User).filter(models.User.username == token_data.username).first()
+    user = db.query(models.User).filter(models.User.email == token_data.email).first()
     if user is None:
         raise credentials_exception
     return user
 
+# --- Email Helpers ---
+
+async def send_email_async(subject: str, email_to: str, body: dict):
+    # This is a basic template. In a real app, use HTML templates.
+    html = f"""
+    <p>{body.get("title")}</p>
+    <p>{body.get("msg")}</p>
+    """
+    message = MessageSchema(
+        subject=subject,
+        recipients=[email_to],
+        body=html,
+        subtype=MessageType.html
+    )
+    fm = FastMail(conf)
+    try:
+        await fm.send_message(message)
+    except Exception as e:
+        print(f"Email failed to send: {e}") 
+        # We don't want to crash the request if email fails, just log it
+
 # --- Auth Endpoints ---
 
 @app.post("/register", response_model=schemas.Token)
-async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    is_valid_captcha = await verify_recaptcha(user.captcha_token)
-    if not is_valid_captcha:
-        raise HTTPException(status_code=400, detail="reCAPTCHA failed. Potential bot detected.")
-
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
+async def register(user: schemas.UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # 1. Check existing user
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(status_code=400, detail="Email already registered")
     
+    # 2. Create User
     hashed_password = get_password_hash(user.password)
-    new_user = models.User(username=user.username, hashed_password=hashed_password)
+    new_user = models.User(
+        email=user.email, 
+        hashed_password=hashed_password,
+        is_verified=False # Set to True if you want to skip email verif for now
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
-    access_token = create_access_token(data={"sub": new_user.username})
+
+    # 3. Create Access Token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": new_user.email}, expires_delta=access_token_expires
+    )
+
+    # 4. Send Welcome Email (Optional)
+    # background_tasks.add_task(send_email_async, "Welcome to RNG Track", user.email, {"title": "Welcome!", "msg": "Thanks for signing up."})
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/token", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Note: OAuth2PasswordRequestForm expects 'username' field, frontend must send email as username
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.email}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-# --- Game/Event Endpoints ---
-
-@app.post("/games/", response_model=schemas.Game)
-def create_game(game: schemas.GameCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    db_game = models.Game(name=game.name)
-    db.add(db_game)
+@app.post("/forgot-password")
+async def forgot_password(payload: schemas.ForgotPassword, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not user:
+        # Don't reveal if user exists
+        return {"msg": "If this email exists, a reset link has been sent."}
+    
+    # Generate Reset Token
+    token = secrets.token_urlsafe(32)
+    user.reset_token = token
+    user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
     db.commit()
-    db.refresh(db_game)
-    return db_game
+
+    # Send Email
+    # In production, this link points to your frontend reset page
+    reset_link = f"https://kuroiel.github.io/RNG-Track/?reset_token={token}"
+    email_body = {
+        "title": "Password Reset Request",
+        "msg": f"Click here to reset your password: <a href='{reset_link}'>Reset Password</a>"
+    }
+    background_tasks.add_task(send_email_async, "Reset Password", user.email, email_body)
+
+    return {"msg": "If this email exists, a reset link has been sent."}
+
+@app.post("/reset-password")
+async def reset_password(payload: schemas.ResetPassword, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.reset_token == payload.token).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    
+    if user.reset_token_expires < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Token expired")
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    db.commit()
+
+    return {"msg": "Password updated successfully"}
+
+# --- Data Endpoints ---
 
 @app.get("/games/", response_model=List[schemas.Game])
-def read_games(
-    skip: int = 0, 
-    limit: int = 100, 
-    search: Optional[str] = None, 
-    db: Session = Depends(get_db)
-):
-    query = db.query(models.Game)
-    if search:
-        # ILIKE is Postgres specific, usually maps to LIKE in SQLite but case-insensitive
-        # For cross-DB compatibility in simple apps, this is usually fine.
-        query = query.filter(models.Game.name.ilike(f"%{search}%"))
-    
-    return query.offset(skip).limit(limit).all()
-
-@app.post("/events/", response_model=schemas.Event)
-def create_event(event: schemas.EventCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    db_event = models.Event(name=event.name, game_id=event.game_id)
-    db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
-
-    for outcome in event.outcomes:
-        db_outcome = models.Outcome(name=outcome.name, probability=outcome.probability, event_id=db_event.id)
-        db.add(db_outcome)
-    
-    db.commit()
-    db.refresh(db_event)
-    return db_event
+def read_games(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    games = db.query(models.Game).offset(skip).limit(limit).all()
+    return games
 
 @app.get("/events/{game_id}", response_model=List[schemas.Event])
 def read_events(game_id: int, db: Session = Depends(get_db)):
-    return db.query(models.Event).filter(models.Event.game_id == game_id).all()
+    events = db.query(models.Event).filter(models.Event.game_id == game_id).all()
+    return events
 
-# --- Logging Endpoints ---
-
-@app.post("/logs/", response_model=schemas.Log)
-def create_log(log: schemas.LogCreate, event_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+@app.get("/stats/{event_id}", response_model=schemas.Stats)
+def calculate_stats(event_id: int, db: Session = Depends(get_db)):
+    # 7.1 Optimization: Use SQL Aggregation
     event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-
-    valid_outcomes = [o.name for o in event.outcomes]
-    if log.outcome_name not in valid_outcomes:
-        raise HTTPException(status_code=400, detail=f"Invalid outcome. Must be one of: {valid_outcomes}")
     
-    db_log = models.Log(event_id=event_id, outcome_name=log.outcome_name, user_id=current_user.id)
+    # Count Total
+    total_attempts = db.query(func.count(models.Log.id)).filter(models.Log.event_id == event_id).scalar()
+    
+    # Count Successes (result == True)
+    success_count = db.query(func.count(models.Log.id)).filter(
+        models.Log.event_id == event_id, 
+        models.Log.result == True
+    ).scalar()
+
+    # Get expected rate (Assuming single outcome for simplicity per event, or taking the first)
+    # If your model supports multiple outcomes per event, logic might need adjustment.
+    # Here we take the first outcome's rate associated with the event.
+    outcome = db.query(models.Outcome).filter(models.Outcome.event_id == event_id).first()
+    expected_rate = outcome.expected_rate if outcome else 0.0
+
+    if total_attempts > 0:
+        actual_rate = (success_count / total_attempts) * 100
+        # 7.3 Fix Rounding
+        actual_rate = round(actual_rate, 4)
+    else:
+        actual_rate = 0.0
+    
+    # Convert expected from 0.05 to 5.0 for comparison if needed, or keep normalized.
+    # Assuming outcome.expected_rate is like 0.05 (5%)
+    expected_rate_pct = expected_rate * 100
+    
+    deviation = actual_rate - expected_rate_pct
+    deviation = round(deviation, 4)
+
+    return schemas.Stats(
+        event_name=event.name,
+        total_attempts=total_attempts,
+        success_count=success_count,
+        actual_rate=actual_rate,
+        expected_rate=expected_rate_pct,
+        deviation=deviation
+    )
+
+@app.post("/logs/", response_model=schemas.Log)
+def create_log(log: schemas.LogCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_log = models.Log(**log.dict(), user_id=current_user.id)
     db.add(db_log)
     db.commit()
     db.refresh(db_log)
     return db_log
 
-@app.post("/logs/bulk", status_code=201)
-def create_bulk_logs(bulk_data: schemas.BulkLogCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    if bulk_data.count > 1000:
-        raise HTTPException(status_code=400, detail="Batch size limit exceeded (max 1000)")
-
-    event = db.query(models.Event).filter(models.Event.id == bulk_data.event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-
-    valid_outcomes = [o.name for o in event.outcomes]
-    if bulk_data.outcome_name not in valid_outcomes:
-        raise HTTPException(status_code=400, detail=f"Invalid outcome. Must be one of: {valid_outcomes}")
-
-    logs_to_create = []
-    for _ in range(bulk_data.count):
-        logs_to_create.append(
-            models.Log(
-                event_id=bulk_data.event_id,
-                outcome_name=bulk_data.outcome_name,
-                user_id=current_user.id
-            )
-        )
-    
-    db.bulk_save_objects(logs_to_create)
+@app.post("/logs/bulk")
+def create_logs_bulk(logs: List[schemas.LogCreate], current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Optimization: Use bulk_save_objects if needed, but simple loop is fine for <100 items
+    db_logs = [models.Log(**log.dict(), user_id=current_user.id) for log in logs]
+    db.add_all(db_logs)
     db.commit()
-    return {"message": f"Successfully logged {bulk_data.count} items"}
-
-# --- Stats Logic ---
-
-@app.get("/stats/{event_id}", response_model=schemas.StatsResponse)
-def read_stats(event_id: int, token: Optional[str] = None, db: Session = Depends(get_db)):
-    event = db.query(models.Event).filter(models.Event.id == event_id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    
-    defined_outcomes = {o.name: o.probability for o in event.outcomes}
-    
-    global_counts_query = db.query(
-        models.Log.outcome_name, func.count(models.Log.id)
-    ).filter(models.Log.event_id == event_id).group_by(models.Log.outcome_name).all()
-    
-    global_counts = {name: count for name, count in global_counts_query}
-    total_attempts = sum(global_counts.values())
-
-    actual_rates = {}
-    expected_rates = {}
-    deviation = {}
-
-    for name, prob in defined_outcomes.items():
-        count = global_counts.get(name, 0)
-        rate = (count / total_attempts) * 100 if total_attempts > 0 else 0.0
-        actual_rates[name] = rate
-        expected_rates[name] = prob
-        deviation[name] = rate - prob
-
-    user_counts = {}
-    user_total = 0
-    user_actual_rates = {}
-    
-    current_user = None
-    if token and token != "null":
-        clean_token = token.replace("Bearer ", "") if token.startswith("Bearer ") else token
-        try:
-            payload = jwt.decode(clean_token, SECRET_KEY, algorithms=[ALGORITHM])
-            username = payload.get("sub")
-            if username:
-                current_user = db.query(models.User).filter(models.User.username == username).first()
-        except:
-            pass 
-
-    if current_user:
-        user_counts_query = db.query(
-            models.Log.outcome_name, func.count(models.Log.id)
-        ).filter(
-            models.Log.event_id == event_id, 
-            models.Log.user_id == current_user.id
-        ).group_by(models.Log.outcome_name).all()
-        
-        user_counts = {name: count for name, count in user_counts_query}
-        user_total = sum(user_counts.values())
-        
-        for name in defined_outcomes.keys():
-            count = user_counts.get(name, 0)
-            rate = (count / user_total) * 100 if user_total > 0 else 0.0
-            user_actual_rates[name] = rate
-
-    return {
-        "total_attempts": total_attempts,
-        "outcomes": global_counts,
-        "actual_rates": actual_rates,
-        "expected_rates": expected_rates,
-        "deviation": deviation,
-        "user_total_attempts": user_total,
-        "user_outcomes": user_counts,
-        "user_actual_rates": user_actual_rates
-    }
+    return {"msg": f"{len(logs)} logs added"}

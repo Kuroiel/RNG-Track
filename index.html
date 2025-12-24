@@ -5,136 +5,145 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RNG Tracker</title>
     <link rel="stylesheet" href="style.css" />
-    <!-- REPLACE 'YOUR_GOOGLE_SITE_KEY_HERE' BELOW -->
-    <script src="https://www.google.com/recaptcha/api.js?render=6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc"></script>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Chart.js for Visuals (9.2) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- reCAPTCHA v3 -->
+    <script src="https://www.google.com/recaptcha/api.js?render=YOUR_RECAPTCHA_SITE_KEY_HERE"></script>
   </head>
   <body>
-    <!-- Navbar -->
+    <!-- 7.4 Loading Overlay -->
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div>Processing...</div>
+    </div>
+
     <header>
-      <div class="header-inner">
-        <h1 onclick="window.location.reload()" style="cursor: pointer">
-          RNG Tracker
-        </h1>
-        <div id="header-controls">
-          <span id="user-display" style="display: none"></span>
-          <button id="logout-btn" class="nav-btn" style="display: none">
-            Logout
-          </button>
-          <button id="login-btn-nav" class="nav-btn primary-btn">
-            Login / Register
-          </button>
-        </div>
+      <div class="logo">RNG Track</div>
+      <div class="user-controls">
+        <!-- 1. Theme Toggle -->
+        <button id="theme-toggle" class="theme-toggle">☀/☾</button>
+        <span id="user-display" class="hidden"></span>
+        <button id="login-btn">Login / Register</button>
+        <button id="logout-btn" class="hidden">Logout</button>
       </div>
     </header>
 
-    <!-- Modern Auth Modal -->
-    <div id="auth-modal" class="modal-overlay">
-      <div class="modal-card">
-        <button class="close-modal-btn">&times;</button>
+    <div class="container">
+      <!-- Hero / Search -->
+      <div id="search-section">
+        <h2>Find Your Game</h2>
+        <input type="text" id="game-search" placeholder="Search games..." />
+        <div id="games-grid" class="grid"></div>
+      </div>
 
-        <div class="modal-header">
-          <h2 id="auth-title">Welcome Back</h2>
-          <p id="auth-subtitle">Enter your details to sign in</p>
+      <!-- Events Section -->
+      <div id="events-section" class="hidden">
+        <button id="back-to-games">← Back to Games</button>
+        <h2 id="selected-game-title">Events</h2>
+        <div id="events-grid" class="grid"></div>
+      </div>
+
+      <!-- Stats Section -->
+      <div id="stats-section" class="hidden">
+        <button id="back-to-events">← Back to Events</button>
+        <h2 id="event-title">Event Statistics</h2>
+
+        <div id="stats-display">
+          <!-- Text Stats -->
+          <p>Attempts: <span id="stat-attempts">0</span></p>
+          <p>Successes: <span id="stat-success">0</span></p>
+          <p>Actual Rate: <span id="stat-actual">0%</span></p>
+          <p>Expected Rate: <span id="stat-expected">0%</span></p>
+          <p>Deviation: <span id="stat-deviation">0</span></p>
+
+          <!-- 9.2 Visuals -->
+          <div class="chart-container">
+            <canvas id="statsChart"></canvas>
+          </div>
         </div>
 
-        <p id="auth-message" class="error-text"></p>
-
-        <!-- Login Form -->
-        <form id="login-form">
-          <div class="form-group">
-            <label>Username</label>
-            <input
-              type="text"
-              name="username"
-              placeholder="e.g. Gamer123"
-              required
-              autocomplete="username"
-            />
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              required
-              autocomplete="current-password"
-            />
-          </div>
-          <button type="submit" class="full-width-btn">Sign In</button>
-        </form>
-
-        <!-- Register Form -->
-        <form id="register-form" style="display: none">
-          <div class="form-group">
-            <label>Choose Username</label>
-            <input
-              type="text"
-              name="username"
-              placeholder="e.g. Gamer123"
-              required
-              autocomplete="username"
-            />
-          </div>
-          <div class="form-group">
-            <label>Choose Password</label>
-            <input
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              required
-              autocomplete="new-password"
-            />
-          </div>
-          <button type="submit" class="full-width-btn">Create Account</button>
-        </form>
-
-        <div class="modal-footer">
-          <p id="toggle-text">Don't have an account?</p>
-          <button class="link-btn" id="toggle-auth-mode">Sign up</button>
+        <!-- Logging Section -->
+        <div id="log-section" class="hidden">
+          <h3>Submit Log</h3>
+          <button id="log-success-btn">Log Success</button>
+          <button id="log-fail-btn">Log Fail</button>
         </div>
+        <p id="login-prompt">Login to track your own stats!</p>
       </div>
     </div>
 
-    <!-- Main Content -->
-    <div id="dashboard-section" class="container">
-      <!-- Hero / Search Section -->
-      <div class="hero-section">
-        <h2>Verify the Drop Rates.</h2>
-        <p>
-          Search for a game to check if the RNG is rigged or if you're just
-          unlucky.
-        </p>
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2 id="auth-title">Login</h2>
 
-        <div class="search-container">
+        <!-- Auth Form -->
+        <form id="auth-form">
+          <input type="email" id="auth-email" placeholder="Email" required />
           <input
-            type="text"
-            id="game-search"
-            placeholder="Search for a game... (e.g. 'Elden')"
+            type="password"
+            id="auth-password"
+            placeholder="Password"
+            required
           />
-          <button id="search-btn">Search</button>
-        </div>
-      </div>
 
-      <!-- Games List Results -->
-      <div id="games-list-container" style="display: none">
-        <div id="games-list" class="section-block"></div>
-      </div>
+          <!-- 3. Password Confirmation (Only visible on register) -->
+          <div id="register-fields" class="hidden">
+            <input
+              type="password"
+              id="auth-password-confirm"
+              placeholder="Confirm Password"
+            />
+            <div class="password-note">
+              Must be 8+ chars, contain uppercase, lowercase, and a number.
+            </div>
+          </div>
 
-      <!-- Events List -->
-      <div id="events-list" class="section-block" style="display: none">
-        <p style="color: #888">Select a game above to view events.</p>
-      </div>
+          <div style="font-size: 0.8rem; margin-bottom: 10px; color: #888">
+            This site is protected by reCAPTCHA and the Google
+            <a href="https://policies.google.com/privacy">Privacy Policy</a> and
+            <a href="https://policies.google.com/terms">Terms of Service</a>
+            apply.
+          </div>
 
-      <!-- Stats Area -->
-      <div id="stats" class="section-block"></div>
+          <button type="submit" id="auth-submit">Login</button>
+        </form>
+
+        <p
+          style="margin-top: 1rem; cursor: pointer; color: var(--primary-color)"
+          id="toggle-auth-mode"
+        >
+          Need an account? Register
+        </p>
+        <!-- 6. Forgot Password Link -->
+        <p
+          style="margin-top: 0.5rem; cursor: pointer; font-size: 0.9rem"
+          id="forgot-password-link"
+        >
+          Forgot Password?
+        </p>
+      </div>
     </div>
 
-    <div id="log-message" class="feedback"></div>
+    <!-- Reset Password Modal (Forgot Password Flow) -->
+    <div id="reset-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-reset">&times;</span>
+        <h2>Reset Password</h2>
+        <div id="reset-request-step">
+          <p>Enter your email to receive a reset link.</p>
+          <input type="email" id="reset-email" placeholder="Email" />
+          <button id="btn-request-reset">Send Link</button>
+        </div>
+        <div id="reset-confirm-step" class="hidden">
+          <p>Enter your new password.</p>
+          <input type="hidden" id="reset-token" />
+          <input type="password" id="new-password" placeholder="New Password" />
+          <button id="btn-confirm-reset">Update Password</button>
+        </div>
+      </div>
+    </div>
 
     <script src="script.js"></script>
   </body>

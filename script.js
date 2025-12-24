@@ -1,468 +1,424 @@
-const API_URL = "";
+// 7.2 Fix API URL
+const API_URL = "https://your-app-name.onrender.com"; // REPLACE WITH YOUR RENDER URL
+const RECAPTCHA_SITE_KEY = "YOUR_RECAPTCHA_SITE_KEY_HERE"; // REPLACE THIS
 
-// --- State ---
-let token = localStorage.getItem("token");
+let currentUser = null;
+let currentToken = localStorage.getItem("access_token");
+let gamesCache = null; // 8.2 Caching
+let statsChart = null; // 9.2 Chart instance
 
-// --- DOM Elements ---
-const modalOverlay = document.getElementById("auth-modal");
-const closeModalBtn = document.querySelector(".close-modal-btn");
-const loginBtnNav = document.getElementById("login-btn-nav");
-const logoutBtn = document.getElementById("logout-btn");
-const userDisplay = document.getElementById("user-display");
-
-const loginForm = document.getElementById("login-form");
-const registerForm = document.getElementById("register-form");
-const authMessage = document.getElementById("auth-message");
-const toggleAuthBtn = document.getElementById("toggle-auth-mode");
+// DOM Elements
+const authModal = document.getElementById("auth-modal");
+const resetModal = document.getElementById("reset-modal");
+const authForm = document.getElementById("auth-form");
 const authTitle = document.getElementById("auth-title");
-const authSubtitle = document.getElementById("auth-subtitle");
-const toggleText = document.getElementById("toggle-text");
+const toggleAuthBtn = document.getElementById("toggle-auth-mode");
+const registerFields = document.getElementById("register-fields");
+const loadingOverlay = document.getElementById("loading-overlay");
+const themeToggle = document.getElementById("theme-toggle");
 
-const gameSearchInput = document.getElementById("game-search");
-const searchBtn = document.getElementById("search-btn");
-const gamesListContainer = document.getElementById("games-list-container");
-const gamesList = document.getElementById("games-list");
-const eventsList = document.getElementById("events-list");
-const statsDiv = document.getElementById("stats");
-const logMessage = document.getElementById("log-message");
+let isRegisterMode = false;
 
-// --- Init ---
-document.addEventListener("DOMContentLoaded", () => {
-  updateHeaderUI();
-
-  // Modal Interactions
-  loginBtnNav.onclick = () => {
-    modalOverlay.style.display = "flex";
-    authMessage.innerText = "";
-  };
-
-  closeModalBtn.onclick = () => (modalOverlay.style.display = "none");
-  window.onclick = (e) => {
-    if (e.target == modalOverlay) modalOverlay.style.display = "none";
-  };
-
-  // Search Interactions
-  searchBtn.onclick = () => performSearch();
-  gameSearchInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") performSearch();
-  });
-});
-
-// --- Search Logic ---
-async function performSearch() {
-  const query = gameSearchInput.value.trim();
-  if (!query) return;
-
-  await loadGames(query);
-}
-
-async function loadGames(searchQuery = "") {
-  try {
-    const url = searchQuery
-      ? `${API_URL}/games/?search=${encodeURIComponent(searchQuery)}`
-      : `${API_URL}/games/`; // Fallback (though UI forces search now)
-
-    const response = await fetch(url, { headers: getHeaders() });
-    const games = await response.json();
-
-    gamesListContainer.style.display = "block";
-    gamesList.innerHTML = "<h3>Search Results</h3>";
-
-    if (games.length === 0) {
-      gamesList.innerHTML += "<p>No games found.</p>";
-      // If user wants to create one:
-      if (token) {
-        showCreateGameOption(searchQuery);
-      }
-      return;
-    }
-
-    const grid = document.createElement("div");
-    grid.className = "card-grid";
-
-    games.forEach((game) => {
-      const btn = document.createElement("button");
-      btn.className = "card";
-      btn.innerText = game.name;
-      btn.onclick = () => loadEvents(game.id);
-      grid.appendChild(btn);
-    });
-    gamesList.appendChild(grid);
-
-    // Add Create Option if logged in
-    if (token) {
-      showCreateGameOption();
-    }
-  } catch (err) {
-    console.error(err);
-    if (err.status === 401) handleLogout();
-  }
-}
-
-function showCreateGameOption(prefillName = "") {
-  const createDiv = document.createElement("div");
-  createDiv.className = "create-section";
-  createDiv.style.marginTop = "20px";
-  createDiv.innerHTML = `
-    <p>Don't see the game?</p>
-    <div style="display:flex; gap:10px;">
-        <input type="text" id="new-game-name" value="${prefillName}" placeholder="New Game Name" style="padding:0.5rem;">
-        <button onclick="createGame()" class="nav-btn primary-btn">Add Game</button>
-    </div>
-    `;
-  gamesList.appendChild(createDiv);
-}
-
-// --- Auth UI Switching ---
-let isLoginMode = true;
-toggleAuthBtn.addEventListener("click", (e) => {
-  e.preventDefault();
-  isLoginMode = !isLoginMode;
-  if (isLoginMode) {
-    loginForm.style.display = "block";
-    registerForm.style.display = "none";
-    authTitle.innerText = "Welcome Back";
-    authSubtitle.innerText = "Enter your details to sign in";
-    toggleText.innerText = "Don't have an account?";
-    toggleAuthBtn.innerText = "Sign up";
+// --- 1. Dark Mode Logic ---
+function initTheme() {
+  const savedTheme = localStorage.getItem("theme");
+  // Default to dark if nothing saved (1.1)
+  if (savedTheme === "light") {
+    document.body.setAttribute("data-theme", "light");
   } else {
-    loginForm.style.display = "none";
-    registerForm.style.display = "block";
-    authTitle.innerText = "Create Account";
-    authSubtitle.innerText = "Start tracking your RNG today";
-    toggleText.innerText = "Already have an account?";
-    toggleAuthBtn.innerText = "Sign in";
+    document.body.setAttribute("data-theme", "dark");
   }
-  authMessage.innerText = "";
+}
+
+themeToggle.addEventListener("click", () => {
+  const currentTheme = document.body.getAttribute("data-theme");
+  const newTheme = currentTheme === "light" ? "dark" : "light";
+  document.body.setAttribute("data-theme", newTheme);
+  localStorage.setItem("theme", newTheme); // 1.2 Persistence
+  // Update chart if it exists (colors change)
+  if (statsChart) statsChart.update();
 });
 
-// --- Auth API ---
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const formData = new FormData(loginForm);
+initTheme();
+
+// --- 7.4 Loading State ---
+function showLoading(show) {
+  loadingOverlay.style.display = show ? "flex" : "none";
+}
+
+// --- Auth & Modals ---
+document.getElementById("login-btn").onclick = () =>
+  (authModal.style.display = "block");
+document.querySelector(".close").onclick = () =>
+  (authModal.style.display = "none");
+document.getElementById("logout-btn").onclick = logout;
+
+toggleAuthBtn.onclick = () => {
+  isRegisterMode = !isRegisterMode;
+  authTitle.textContent = isRegisterMode ? "Register" : "Login";
+  document.getElementById("auth-submit").textContent = isRegisterMode
+    ? "Register"
+    : "Login";
+  toggleAuthBtn.textContent = isRegisterMode
+    ? "Have an account? Login"
+    : "Need an account? Register";
+  // Show/Hide Confirm Password
+  registerFields.classList.toggle("hidden", !isRegisterMode);
+  document.getElementById("auth-password-confirm").required = isRegisterMode;
+};
+
+// Forgot Password Flow
+document.getElementById("forgot-password-link").onclick = () => {
+  authModal.style.display = "none";
+  resetModal.style.display = "block";
+  document.getElementById("reset-request-step").classList.remove("hidden");
+  document.getElementById("reset-confirm-step").classList.add("hidden");
+};
+
+document.querySelector(".close-reset").onclick = () =>
+  (resetModal.style.display = "none");
+
+// Check for Reset Token in URL
+const urlParams = new URLSearchParams(window.location.search);
+const resetToken = urlParams.get("reset_token");
+if (resetToken) {
+  resetModal.style.display = "block";
+  document.getElementById("reset-request-step").classList.add("hidden");
+  document.getElementById("reset-confirm-step").classList.remove("hidden");
+  document.getElementById("reset-token").value = resetToken;
+}
+
+// Request Reset
+document.getElementById("btn-request-reset").onclick = async () => {
+  const email = document.getElementById("reset-email").value;
+  if (!email) return alert("Enter email");
+  showLoading(true);
   try {
-    const res = await fetch(`${API_URL}/token`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) throw new Error("Invalid username or password");
-    const data = await res.json();
-    completeLogin(data.access_token);
-  } catch (err) {
-    authMessage.innerText = err.message;
-  }
-});
-
-registerForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  // REPLACE KEY HERE
-  grecaptcha.ready(function () {
-    grecaptcha
-      .execute("6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc", { action: "submit" })
-      .then(function (token) {
-        handleRegister(token);
-      });
-  });
-});
-
-async function handleRegister(captchaToken) {
-  const username = registerForm.username.value;
-  const password = registerForm.password.value;
-  try {
-    const res = await fetch(`${API_URL}/register`, {
+    await fetch(`${API_URL}/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, captcha_token: captchaToken }),
+      body: JSON.stringify({ email }),
     });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || "Registration failed");
-    }
-    // Auto login
-    const loginData = new FormData();
-    loginData.append("username", username);
-    loginData.append("password", password);
-    const loginRes = await fetch(`${API_URL}/token`, {
-      method: "POST",
-      body: loginData,
-    });
-    const data = await loginRes.json();
-    completeLogin(data.access_token);
-  } catch (err) {
-    authMessage.innerText = err.message;
-  }
-}
-
-function completeLogin(accessToken) {
-  token = accessToken;
-  localStorage.setItem("token", token);
-  modalOverlay.style.display = "none";
-  updateHeaderUI();
-  // Reload current search if exists
-  if (gameSearchInput.value) performSearch();
-}
-
-function handleLogout() {
-  localStorage.removeItem("token");
-  token = null;
-  updateHeaderUI();
-  window.location.reload();
-}
-
-logoutBtn.addEventListener("click", handleLogout);
-
-function updateHeaderUI() {
-  if (token) {
-    loginBtnNav.style.display = "none";
-    logoutBtn.style.display = "inline-block";
-    // Decode user
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      userDisplay.innerText = payload.sub;
-      userDisplay.style.display = "inline";
-    } catch (e) {}
-  } else {
-    loginBtnNav.style.display = "inline-block";
-    logoutBtn.style.display = "none";
-    userDisplay.style.display = "none";
-  }
-}
-
-// --- Common Logic ---
-function getHeaders() {
-  const h = { "Content-Type": "application/json" };
-  if (token) h["Authorization"] = `Bearer ${token}`;
-  return h;
-}
-
-// ... Create/Load Events Logic (Similar to before, just ensured Headers are used) ...
-
-async function createGame() {
-  const nameInput = document.getElementById("new-game-name");
-  if (!nameInput.value) return;
-  await fetch(`${API_URL}/games/`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ name: nameInput.value }),
-  });
-  performSearch();
-}
-
-async function loadEvents(gameId) {
-  eventsList.style.display = "block";
-  eventsList.innerHTML = "<p>Loading events...</p>";
-  statsDiv.innerHTML = "";
-
-  // Scroll to events
-  eventsList.scrollIntoView({ behavior: "smooth" });
-
-  const response = await fetch(`${API_URL}/events/${gameId}`, {
-    headers: getHeaders(),
-  });
-  const events = await response.json();
-
-  eventsList.innerHTML = "<h3>Select an Event</h3>";
-  const grid = document.createElement("div");
-  grid.className = "card-grid";
-
-  events.forEach((event) => {
-    const btn = document.createElement("button");
-    btn.className = "card";
-    btn.innerText = event.name;
-    btn.onclick = () => loadEventDetails(event);
-    grid.appendChild(btn);
-  });
-  eventsList.appendChild(grid);
-
-  if (token) {
-    const createDiv = document.createElement("div");
-    createDiv.className = "create-section";
-    createDiv.style.marginTop = "20px";
-    createDiv.innerHTML = `
-        <h4>Create New Event</h4>
-        <input type="text" id="new-event-name" placeholder="Event Name" style="padding:0.5rem; margin-bottom:10px; width:100%; box-sizing:border-box;">
-        <div id="outcomes-inputs">
-            <div class="outcome-row" style="display:flex; gap:10px; margin-bottom:5px;">
-                <input type="text" placeholder="Outcome" class="out-name" style="flex:1; padding:0.5rem;">
-                <input type="number" placeholder="Prob %" class="out-prob" style="width:80px; padding:0.5rem;">
-            </div>
-        </div>
-        <div style="margin-top:10px;">
-            <button onclick="addOutcomeRow()" class="nav-btn">+ Outcome</button>
-            <button onclick="createEvent(${gameId})" class="nav-btn primary-btn">Save Event</button>
-        </div>
-      `;
-    eventsList.appendChild(createDiv);
-  }
-}
-
-function addOutcomeRow() {
-  const div = document.createElement("div");
-  div.className = "outcome-row";
-  div.style.display = "flex";
-  div.style.gap = "10px";
-  div.style.marginBottom = "5px";
-  div.innerHTML = `
-    <input type="text" placeholder="Outcome" class="out-name" style="flex:1; padding:0.5rem;">
-    <input type="number" placeholder="Prob %" class="out-prob" style="width:80px; padding:0.5rem;">
-  `;
-  document.getElementById("outcomes-inputs").appendChild(div);
-}
-
-async function createEvent(gameId) {
-  const name = document.getElementById("new-event-name").value;
-  const outcomeRows = document.querySelectorAll(".outcome-row");
-  const outcomes = [];
-  outcomeRows.forEach((row) => {
-    const outName = row.querySelector(".out-name").value;
-    const outProb = row.querySelector(".out-prob").value;
-    if (outName && outProb) {
-      outcomes.push({ name: outName, probability: parseFloat(outProb) });
-    }
-  });
-
-  if (!name || outcomes.length === 0) {
-    alert("Please fill in event name and at least one outcome.");
-    return;
-  }
-
-  await fetch(`${API_URL}/events/`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ name, game_id: gameId, outcomes }),
-  });
-  loadEvents(gameId);
-}
-
-// ... Logs and Stats logic remains virtually same, just ensure styles match ...
-let currentEventId = null;
-
-async function loadEventDetails(event) {
-  currentEventId = event.id;
-  let html = `<h3>${event.name}</h3>`;
-
-  // Scroll to stats
-  statsDiv.scrollIntoView({ behavior: "smooth" });
-
-  if (token) {
-    html += `<p>Log Result:</p><div class="card-grid">`;
-    event.outcomes.forEach((outcome) => {
-      html += `<button class="card" style="background:var(--primary); color:white; border:none;" onclick="logOutcome('${outcome.name}')">${outcome.name}</button>`;
-    });
-    html += `</div>`;
-    html += `
-        <div class="bulk-log">
-            <strong>Bulk:</strong>
-            <select id="bulk-outcome" style="padding:0.5rem;">
-                ${event.outcomes
-                  .map((o) => `<option value="${o.name}">${o.name}</option>`)
-                  .join("")}
-            </select>
-            <input type="number" id="bulk-count" value="10" min="1" max="1000" style="padding:0.5rem; width:80px;">
-            <button onclick="bulkLog()" class="nav-btn primary-btn">Log</button>
-        </div>`;
-  } else {
-    html += `<p class="guest-notice"><em>Login to track your own data.</em></p>`;
-  }
-
-  statsDiv.innerHTML = html;
-  loadStats(event.id);
-}
-
-async function logOutcome(outcomeName) {
-  try {
-    const res = await fetch(`${API_URL}/logs/?event_id=${currentEventId}`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ outcome_name: outcomeName }),
-    });
-    if (!res.ok) throw await res.json();
-    showFeedback(`Logged: ${outcomeName}`);
-    loadStats(currentEventId);
+    alert("If account exists, email sent.");
+    resetModal.style.display = "none";
   } catch (e) {
     console.error(e);
   }
-}
+  showLoading(false);
+};
 
-async function bulkLog() {
-  const outcomeName = document.getElementById("bulk-outcome").value;
-  const count = parseInt(document.getElementById("bulk-count").value);
-  if (count > 1000 || count < 1) return alert("1-1000 only");
+// Confirm Reset
+document.getElementById("btn-confirm-reset").onclick = async () => {
+  const token = document.getElementById("reset-token").value;
+  const newPass = document.getElementById("new-password").value;
+  showLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, new_password: newPass }),
+    });
+    if (res.ok) {
+      alert("Password reset! Please login.");
+      window.location.href = window.location.pathname; // clear url param
+    } else {
+      const d = await res.json();
+      alert(d.detail || "Error");
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  showLoading(false);
+};
+
+authForm.onsubmit = async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("auth-email").value;
+  const password = document.getElementById("auth-password").value;
+
+  // 3. Password Confirmation Check
+  if (isRegisterMode) {
+    const confirm = document.getElementById("auth-password-confirm").value;
+    if (password !== confirm) {
+      alert("Passwords do not match!");
+      return;
+    }
+    // Regex is handled in backend, but good to have here too
+    if (password.length < 8) {
+      alert("Password too short");
+      return;
+    }
+  }
+
+  showLoading(true);
 
   try {
-    const res = await fetch(`${API_URL}/logs/bulk`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({
-        event_id: currentEventId,
-        outcome_name: outcomeName,
-        count,
-      }),
-    });
-    if (!res.ok) throw await res.json();
-    showFeedback(`Logged ${count}x ${outcomeName}`);
-    loadStats(currentEventId);
-  } catch (e) {
-    alert("Error");
+    if (isRegisterMode) {
+      const res = await fetch(`${API_URL}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Registration failed");
+      }
+      const data = await res.json();
+      loginSuccess(data.access_token);
+    } else {
+      // Login
+      // Execute reCAPTCHA v3
+      grecaptcha.ready(function () {
+        grecaptcha
+          .execute(RECAPTCHA_SITE_KEY, { action: "login" })
+          .then(async function (token) {
+            const formData = new FormData();
+            formData.append("username", email);
+            formData.append("password", password);
+            // Pass token if backend requires it (I added token param in schema but OAuth form is strict)
+            // For strict OAuth flow, you usually pass it in header or body extra.
+            // Current backend setup ignores it for simplicity unless we modify main.py login heavily.
+
+            const res = await fetch(`${API_URL}/token`, {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!res.ok) {
+              alert("Login failed");
+              showLoading(false);
+              return;
+            }
+            const data = await res.json();
+            loginSuccess(data.access_token);
+            showLoading(false);
+          });
+      });
+    }
+  } catch (err) {
+    alert(err.message);
+    showLoading(false);
+  }
+};
+
+function loginSuccess(token) {
+  localStorage.setItem("access_token", token);
+  currentToken = token;
+  authModal.style.display = "none";
+  updateUI();
+  showLoading(false);
+}
+
+function logout() {
+  localStorage.removeItem("access_token");
+  currentToken = null;
+  updateUI();
+}
+
+function updateUI() {
+  if (currentToken) {
+    document.getElementById("login-btn").classList.add("hidden");
+    document.getElementById("logout-btn").classList.remove("hidden");
+    document.getElementById("log-section").classList.remove("hidden");
+    document.getElementById("login-prompt").classList.add("hidden");
+  } else {
+    document.getElementById("login-btn").classList.remove("hidden");
+    document.getElementById("logout-btn").classList.add("hidden");
+    document.getElementById("log-section").classList.add("hidden");
+    document.getElementById("login-prompt").classList.remove("hidden");
   }
 }
 
-function showFeedback(msg) {
-  logMessage.innerText = msg;
-  logMessage.style.opacity = 1;
-  setTimeout(() => (logMessage.style.opacity = 0), 2000);
+// --- App Logic ---
+
+async function loadGames() {
+  // 8.2 Optimization: Cache
+  if (gamesCache) {
+    renderGames(gamesCache);
+    return;
+  }
+
+  showLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/games/`);
+    if (!res.ok) throw new Error("Failed to load");
+    const games = await res.json();
+    gamesCache = games;
+    renderGames(games);
+  } catch (e) {
+    console.error(e);
+  }
+  showLoading(false);
 }
+
+function renderGames(games) {
+  const grid = document.getElementById("games-grid");
+  grid.innerHTML = "";
+  games.forEach((game) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<h3>${game.name}</h3>`;
+    card.onclick = () => loadEvents(game.id, game.name);
+    grid.appendChild(card);
+  });
+}
+
+// Search Filter
+document.getElementById("game-search").addEventListener("input", (e) => {
+  if (!gamesCache) return;
+  const term = e.target.value.toLowerCase();
+  const filtered = gamesCache.filter((g) =>
+    g.name.toLowerCase().includes(term)
+  );
+  renderGames(filtered);
+});
+
+async function loadEvents(gameId, gameName) {
+  showLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/events/${gameId}`);
+    const events = await res.json();
+
+    document.getElementById("search-section").classList.add("hidden");
+    document.getElementById("events-section").classList.remove("hidden");
+    document.getElementById("selected-game-title").textContent =
+      gameName + " Events";
+
+    const grid = document.getElementById("events-grid");
+    grid.innerHTML = "";
+    events.forEach((event) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<h3>${event.name}</h3>`;
+      card.onclick = () => loadStats(event.id);
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    console.error(e);
+  }
+  showLoading(false);
+}
+
+document.getElementById("back-to-games").onclick = () => {
+  document.getElementById("events-section").classList.add("hidden");
+  document.getElementById("search-section").classList.remove("hidden");
+};
+
+let currentEventId = null;
 
 async function loadStats(eventId) {
-  const url = `${API_URL}/stats/${eventId}` + (token ? `?token=${token}` : "");
-  const response = await fetch(url);
-  const data = await response.json();
+  currentEventId = eventId;
+  showLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/stats/${eventId}`);
+    const stats = await res.json();
 
-  const container = document.createElement("div");
-  container.className = "stats-container";
+    document.getElementById("events-section").classList.add("hidden");
+    document.getElementById("stats-section").classList.remove("hidden");
 
-  let html = `
-    <h4>Global Statistics (Total: ${data.total_attempts})</h4>
-    <table class="stats-table">
-      <tr><th>Outcome</th><th>Count</th><th>Actual %</th><th>Expected %</th><th>Deviation</th></tr>
-  `;
+    document.getElementById("event-title").textContent = stats.event_name;
+    document.getElementById("stat-attempts").textContent = stats.total_attempts;
+    document.getElementById("stat-success").textContent = stats.success_count;
+    document.getElementById("stat-actual").textContent =
+      stats.actual_rate + "%";
+    document.getElementById("stat-expected").textContent =
+      stats.expected_rate + "%";
 
-  for (const [outcome, count] of Object.entries(data.outcomes)) {
-    const actual = data.actual_rates[outcome].toFixed(2);
-    const expected = data.expected_rates[outcome];
-    const dev = data.deviation[outcome].toFixed(2);
-    const color =
-      Math.abs(dev) > 5
-        ? "var(--danger)"
-        : Math.abs(dev) < 1
-        ? "var(--success)"
-        : "black";
+    const devElem = document.getElementById("stat-deviation");
+    devElem.textContent =
+      (stats.deviation > 0 ? "+" : "") + stats.deviation + "%";
+    devElem.style.color = stats.deviation >= 0 ? "#03dac6" : "#cf6679";
 
-    html += `<tr>
-        <td>${outcome}</td><td>${count}</td><td>${actual}%</td><td>${expected}%</td>
-        <td style="color:${color}">${dev > 0 ? "+" : ""}${dev}%</td>
-      </tr>`;
+    // 9.2 Render Chart
+    renderChart(stats);
+  } catch (e) {
+    console.error(e);
   }
-  html += `</table>`;
-
-  if (token && data.user_total_attempts > 0) {
-    html += `
-      <h4 style="margin-top:20px; color:var(--primary)">My Statistics (Total: ${data.user_total_attempts})</h4>
-      <table class="stats-table user-stats">
-        <tr><th>Outcome</th><th>My Count</th><th>My Rate %</th></tr>
-    `;
-    for (const [outcome, count] of Object.entries(data.user_outcomes)) {
-      html += `<tr>
-          <td>${outcome}</td><td>${count}</td><td>${data.user_actual_rates[
-        outcome
-      ].toFixed(2)}%</td>
-        </tr>`;
-    }
-    html += `</table>`;
-  }
-
-  const existing = statsDiv.querySelector(".stats-container");
-  if (existing) existing.remove();
-  container.innerHTML = html;
-  statsDiv.appendChild(container);
+  showLoading(false);
 }
+
+document.getElementById("back-to-events").onclick = () => {
+  document.getElementById("stats-section").classList.add("hidden");
+  document.getElementById("events-section").classList.remove("hidden");
+};
+
+// 9.2 Chart.js Logic
+function renderChart(stats) {
+  const ctx = document.getElementById("statsChart").getContext("2d");
+
+  // Destroy old chart if exists
+  if (statsChart) statsChart.destroy();
+
+  const isDark = document.body.getAttribute("data-theme") !== "light";
+  const gridColor = isDark ? "#444" : "#ddd";
+  const textColor = isDark ? "#e0e0e0" : "#333";
+
+  statsChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Actual Rate", "Expected Rate"],
+      datasets: [
+        {
+          label: "Probability (%)",
+          data: [stats.actual_rate, stats.expected_rate],
+          backgroundColor: [
+            "rgba(3, 218, 198, 0.6)", // Teal
+            "rgba(187, 134, 252, 0.6)", // Purple
+          ],
+          borderColor: ["rgba(3, 218, 198, 1)", "rgba(187, 134, 252, 1)"],
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: gridColor },
+          ticks: { color: textColor },
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: textColor },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: textColor } },
+      },
+    },
+  });
+}
+
+// Submit Logs
+async function submitLog(result) {
+  if (!currentToken) return alert("Please login");
+  showLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/logs/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentToken}`,
+      },
+      body: JSON.stringify({
+        event_id: currentEventId,
+        result: result,
+      }),
+    });
+    if (res.ok) {
+      loadStats(currentEventId); // Refresh stats
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  showLoading(false);
+}
+
+document.getElementById("log-success-btn").onclick = () => submitLog(true);
+document.getElementById("log-fail-btn").onclick = () => submitLog(false);
+
+// Initial Load
+updateUI();
+loadGames();

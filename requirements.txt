@@ -11,3 +11,4 @@ pytest-playwright
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
+fastapi-mail
