@@ -1,14 +1,17 @@
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from typing import List
 import requests
 import os
 import secrets
+import logging
 
-# Email
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 
 # Local imports
@@ -47,7 +50,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Update with specific frontend URL for security
+    allow_origins=["http://localhost:5500", "http://127.0.0.1:5500", "https://kuroiel.github.io"], # Restrict to known frontends
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,22 +70,31 @@ def get_password_hash(password):
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def verify_recaptcha(token: str):
+    # Skip verification for testing/dev if secret is default or not set
+    if RECAPTCHA_SECRET == "YOUR_RECAPTCHA_SECRET":
+        logger.warning("Recaptcha Secret is default. Skipping verification.")
+        return True
+
     url = "https://www.google.com/recaptcha/api/siteverify"
     payload = {
         "secret": RECAPTCHA_SECRET,
         "response": token
     }
-    response = requests.post(url, data=payload)
-    result = response.json()
-    return result.get("success", False)
+    try:
+        response = requests.post(url, data=payload, timeout=10)
+        result = response.json()
+        return result.get("success", False)
+    except Exception as e:
+        logger.error(f"Recaptcha verification failed: {e}")
+        return False
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(

@@ -1,6 +1,11 @@
 // 7.2 Fix API URL
-const API_URL = "https://your-app-name.onrender.com"; // REPLACE WITH YOUR RENDER URL
-const RECAPTCHA_SITE_KEY = "YOUR_RECAPTCHA_SITE_KEY_HERE"; // REPLACE THIS
+const isLocal =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const API_URL = isLocal
+  ? "http://localhost:8000"
+  : "https://rng-track.onrender.com";
+const RECAPTCHA_SITE_KEY = "6LfUMjEsAAAAAE_aTbPscOQeaOWpXETR-qLlmrCc"; // REPLACE THIS
 
 let currentUser = null;
 let currentToken = localStorage.getItem("access_token");
@@ -257,7 +262,11 @@ function renderGames(games) {
   games.forEach((game) => {
     const card = document.createElement("div");
     card.className = "card";
-    card.innerHTML = `<h3>${game.name}</h3>`;
+    
+    const title = document.createElement("h3");
+    title.textContent = game.name;
+    card.appendChild(title);
+    
     card.onclick = () => loadEvents(game.id, game.name);
     grid.appendChild(card);
   });
@@ -268,7 +277,7 @@ document.getElementById("game-search").addEventListener("input", (e) => {
   if (!gamesCache) return;
   const term = e.target.value.toLowerCase();
   const filtered = gamesCache.filter((g) =>
-    g.name.toLowerCase().includes(term)
+    g.name.toLowerCase().includes(term),
   );
   renderGames(filtered);
 });
